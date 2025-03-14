@@ -1,0 +1,2 @@
+Forex Website - Bibuain
+Color Palette Primary Colors:  Yellow (#FFC107): Use for highlights, call-to-action buttons, and key notifications. Black (#000000): Use for text, headers, and strong contrasts. Secondary Colors:  White (#FFFFFF): Use for backgrounds and as a neutral base. Gray (#F5F5F5): Use for subtle section backgrounds or dividers. Accent Colors (Optional):  Light Yellow (#FFF8E1): Use for secondary highlights or hover effects.
