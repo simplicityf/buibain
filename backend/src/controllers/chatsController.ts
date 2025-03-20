@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { Chat } from "../models/chats";
 import { User } from "../models/user";
-import { getRepository } from "typeorm";
+import dbConnect from "../config/database";
 import { validationResult } from "express-validator";
 import ErrorHandler from "../utils/errorHandler";
 import { UserRequest } from "../middlewares/authenticate";
@@ -30,8 +30,8 @@ export const createChat = async (
       throw new ErrorHandler("Participants cannot be duplicate", 400);
     }
 
-    const userRepo = getRepository(User);
-    const chatRepo = getRepository(Chat);
+    const userRepo = dbConnect.getRepository(User);
+    const chatRepo = dbConnect.getRepository(Chat);
 
     // Verify that all participants exist in the system
     const users = await userRepo.findByIds(participants);
@@ -83,7 +83,7 @@ export const getChats = async (
       throw new ErrorHandler("Unauthorized access", 401);
     }
 
-    const chatRepo = getRepository(Chat);
+    const chatRepo = dbConnect.getRepository(Chat);
 
     const chats = await chatRepo
       .createQueryBuilder("chat")
@@ -116,7 +116,7 @@ export const getChat = async (
       throw new ErrorHandler("Unauthorized access", 401);
     }
 
-    const chatRepo = getRepository(Chat);
+    const chatRepo = dbConnect.getRepository(Chat);
     const chat = await chatRepo.findOne({
       where: { id: chatId },
       relations: ["participants", "messages", "messages.sender"], // Load sender relation
@@ -153,8 +153,8 @@ export const deleteChat = async (
       throw new ErrorHandler("Unauthorized access", 401);
     }
 
-    const chatRepo = getRepository(Chat);
-    const messageRepo = getRepository(Message);
+    const chatRepo = dbConnect.getRepository(Chat);
+    const messageRepo = dbConnect.getRepository(Message);
 
     // Find the chat with participants
     const chat = await chatRepo.findOne({

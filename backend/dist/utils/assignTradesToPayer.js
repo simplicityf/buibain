@@ -8,18 +8,21 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.assignTradesToPayers = exports.createActivityLog = void 0;
 const trades_1 = require("../models/trades");
 const user_1 = require("../models/user");
-const typeorm_1 = require("typeorm");
+const database_1 = __importDefault(require("../config/database"));
 const notificationController_1 = require("../controllers/notificationController");
 const notifications_1 = require("../models/notifications");
 const messageTemplates_1 = require("../models/messageTemplates");
 const activityLogs_1 = require("../models/activityLogs");
 const createActivityLog = (_a) => __awaiter(void 0, [_a], void 0, function* ({ userId, activity, description, details, isSystemGenerated = false, }) {
-    const activityLogRepository = (0, typeorm_1.getRepository)(activityLogs_1.ActivityLog);
-    const userRepository = (0, typeorm_1.getRepository)(user_1.User);
+    const activityLogRepository = database_1.default.getRepository(activityLogs_1.ActivityLog);
+    const userRepository = database_1.default.getRepository(user_1.User);
     let user;
     if (userId) {
         user = yield userRepository.findOne({ where: { id: userId } });
@@ -39,7 +42,7 @@ const createActivityLog = (_a) => __awaiter(void 0, [_a], void 0, function* ({ u
 });
 exports.createActivityLog = createActivityLog;
 const assignTradesToPayers = () => __awaiter(void 0, void 0, void 0, function* () {
-    const queryRunner = (0, typeorm_1.getConnection)().createQueryRunner();
+    const queryRunner = database_1.default.createQueryRunner();
     yield queryRunner.connect();
     yield queryRunner.startTransaction();
     try {
@@ -148,7 +151,7 @@ const assignTradesToPayers = () => __awaiter(void 0, void 0, void 0, function* (
                 const platform = trade.platform === trades_1.TradePlatform.NOONES
                     ? messageTemplates_1.Platform.NOONES
                     : messageTemplates_1.Platform.PAXFUL;
-                const template = yield (0, typeorm_1.getRepository)(messageTemplates_1.AutoMessageTemplate).findOne({
+                const template = yield database_1.default.getRepository(messageTemplates_1.AutoMessageTemplate).findOne({
                     where: { type: messageTemplates_1.TemplateType.WELCOME, platform, isActive: true },
                     order: { displayOrder: "ASC" },
                 });

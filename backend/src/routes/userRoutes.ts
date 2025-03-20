@@ -13,6 +13,7 @@ import {
   editUserDetails,
   changePassword,
   forgotPassword,
+  updateClockStatus,
 } from "../controllers/AuthController";
 import { authenticate } from "../middlewares/authenticate";
 import validateRequest from "../middlewares/validateRequest";
@@ -32,6 +33,7 @@ router.post(
   validateRequest,
   login
 );
+router.put("/clock-status", updateClockStatus);
 
 router.get("/me", authenticate, getCurrentUser);
 

@@ -1,9 +1,8 @@
 import express, { NextFunction, Request, Response } from "express";
 import cors from "cors";
 import cron from "node-cron";
+import dbConnect from "./config/database";
 import {
-  getConnection,
-  getRepository,
   In,
   IsNull,
   LessThan,

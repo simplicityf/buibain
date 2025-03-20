@@ -13,7 +13,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getSingleAccount = exports.getAllAccounts = exports.deleteAccount = exports.updateAccount = exports.createAccount = void 0;
-const typeorm_1 = require("typeorm");
+const database_1 = __importDefault(require("../config/database"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const accounts_1 = require("../models/accounts");
 const user_1 = require("../models/user");
@@ -38,8 +38,8 @@ const createAccount = (req, res, next) => __awaiter(void 0, void 0, void 0, func
         if (!userId) {
             throw new errorHandler_1.default("Unauthorized access", 401);
         }
-        const accountRepo = (0, typeorm_1.getRepository)(accounts_1.Account);
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const accountRepo = database_1.default.getRepository(accounts_1.Account);
+        const userRepo = database_1.default.getRepository(user_1.User);
         const existingAccount = yield accountRepo.findOne({
             where: { account_username, platform },
         });
@@ -87,8 +87,8 @@ const updateAccount = (req, res, next) => __awaiter(void 0, void 0, void 0, func
         if (!userId) {
             throw new errorHandler_1.default("Unauthorized access", 401);
         }
-        const accountRepo = (0, typeorm_1.getRepository)(accounts_1.Account);
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const accountRepo = database_1.default.getRepository(accounts_1.Account);
+        const userRepo = database_1.default.getRepository(user_1.User);
         const account = yield accountRepo.findOne({
             where: { id },
         });
@@ -131,7 +131,7 @@ exports.updateAccount = updateAccount;
 const deleteAccount = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
-        const accountRepo = (0, typeorm_1.getRepository)(accounts_1.Account);
+        const accountRepo = database_1.default.getRepository(accounts_1.Account);
         const account = yield accountRepo.findOne({
             where: { id },
         });
@@ -158,7 +158,7 @@ const getAllAccounts = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
         if (!userId) {
             throw new errorHandler_1.default("Unauthorized access", 401);
         }
-        const accountRepo = (0, typeorm_1.getRepository)(accounts_1.Account);
+        const accountRepo = database_1.default.getRepository(accounts_1.Account);
         const accounts = yield accountRepo.find({
             select: ["id", "account_username", "platform", "status", "createdAt"],
         });
@@ -177,7 +177,7 @@ exports.getAllAccounts = getAllAccounts;
 const getSingleAccount = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
-        const accountRepo = (0, typeorm_1.getRepository)(accounts_1.Account);
+        const accountRepo = database_1.default.getRepository(accounts_1.Account);
         const account = yield accountRepo.findOne({
             where: { id },
         });

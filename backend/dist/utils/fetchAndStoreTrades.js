@@ -19,10 +19,13 @@ var __rest = (this && this.__rest) || function (s, e) {
         }
     return t;
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fetchAndStoreTrades = void 0;
 const trades_1 = require("../models/trades");
-const typeorm_1 = require("typeorm");
+const database_1 = __importDefault(require("../config/database"));
 const activityLogs_1 = require("../models/activityLogs");
 const noones_1 = require("../config/noones");
 const paxful_1 = require("../config/paxful");
@@ -225,7 +228,7 @@ function processTradeBatch(batch, queryRunner) {
 }
 const fetchAndStoreTrades = () => __awaiter(void 0, void 0, void 0, function* () {
     const stats = { inserted: 0, updated: 0, errors: 0 };
-    const connection = (0, typeorm_1.getConnection)();
+    const connection = database_1.default;
     const queryRunner = connection.createQueryRunner();
     yield queryRunner.connect();
     yield queryRunner.startTransaction();

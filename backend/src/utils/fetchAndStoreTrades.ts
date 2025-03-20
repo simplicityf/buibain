@@ -1,5 +1,6 @@
 import { Trade, TradePlatform } from "../models/trades";
-import { getRepository, DeepPartial, In, getConnection } from "typeorm";
+import dbConnect from "../config/database";
+import { DeepPartial, In } from "typeorm";
 import { ActivityLog, ActivityType } from "../models/activityLogs";
 import { NoonesService } from "../config/noones";
 import { PaxfulService } from "../config/paxful";
@@ -299,7 +300,7 @@ async function processTradeBatch(
 
 export const fetchAndStoreTrades = async () => {
   const stats = { inserted: 0, updated: 0, errors: 0 };
-  const connection = getConnection();
+  const connection = dbConnect;
   const queryRunner = connection.createQueryRunner();
 
   await queryRunner.connect();

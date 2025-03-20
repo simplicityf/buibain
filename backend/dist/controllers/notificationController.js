@@ -13,7 +13,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createNotification = exports.markAllNotificationsAsCompleted = exports.setupNotificationSocket = exports.deleteNotification = exports.markNotificationAsRead = exports.markAllNotificationsAsRead = exports.getUserNotifications = void 0;
-const typeorm_1 = require("typeorm");
+const database_1 = __importDefault(require("../config/database"));
 const errorHandler_1 = __importDefault(require("../utils/errorHandler"));
 const notifications_1 = require("../models/notifications");
 const user_1 = require("../models/user");
@@ -26,7 +26,7 @@ const getUserNotifications = (req, res, next) => __awaiter(void 0, void 0, void 
         if (!userId) {
             throw new errorHandler_1.default("Unauthorized access", 401);
         }
-        const notificationRepo = (0, typeorm_1.getRepository)(notifications_1.Notification);
+        const notificationRepo = database_1.default.getRepository(notifications_1.Notification);
         const notifications = yield notificationRepo.find({
             where: { user: { id: userId } },
             relations: ["relatedAccount"],
@@ -50,7 +50,7 @@ const markAllNotificationsAsRead = (req, res, next) => __awaiter(void 0, void 0,
         if (!userId) {
             throw new errorHandler_1.default("Unauthorized access", 401);
         }
-        const notificationRepo = (0, typeorm_1.getRepository)(notifications_1.Notification);
+        const notificationRepo = database_1.default.getRepository(notifications_1.Notification);
         const result = yield notificationRepo
             .createQueryBuilder()
             .update(notifications_1.Notification)
@@ -86,7 +86,7 @@ const markNotificationAsRead = (req, res, next) => __awaiter(void 0, void 0, voi
         if (!userId) {
             throw new errorHandler_1.default("Unauthorized access", 401);
         }
-        const notificationRepo = (0, typeorm_1.getRepository)(notifications_1.Notification);
+        const notificationRepo = database_1.default.getRepository(notifications_1.Notification);
         const notification = yield notificationRepo.findOne({
             where: { id: notificationId, user: { id: userId } },
         });
@@ -123,7 +123,7 @@ const deleteNotification = (req, res, next) => __awaiter(void 0, void 0, void 0,
         if (!userId) {
             throw new errorHandler_1.default("Unauthorized access", 401);
         }
-        const notificationRepo = (0, typeorm_1.getRepository)(notifications_1.Notification);
+        const notificationRepo = database_1.default.getRepository(notifications_1.Notification);
         const notification = yield notificationRepo.findOne({
             where: { id: notificationId, user: { id: userId } },
         });
@@ -167,7 +167,7 @@ const setupNotificationSocket = (io) => {
         // Handle read status updates
         socket.on("markNotificationRead", (data) => __awaiter(void 0, void 0, void 0, function* () {
             try {
-                const notificationRepo = (0, typeorm_1.getRepository)(notifications_1.Notification);
+                const notificationRepo = database_1.default.getRepository(notifications_1.Notification);
                 const notification = yield notificationRepo.findOne({
                     where: { id: data.notificationId, user: { id: data.userId } },
                 });
@@ -196,7 +196,7 @@ const markAllNotificationsAsCompleted = (req, res, next) => __awaiter(void 0, vo
         if (!userId) {
             throw new errorHandler_1.default("Unauthorized access", 401);
         }
-        const notificationRepo = (0, typeorm_1.getRepository)(notifications_1.Notification);
+        const notificationRepo = database_1.default.getRepository(notifications_1.Notification);
         const result = yield notificationRepo
             .createQueryBuilder()
             .update(notifications_1.Notification)
@@ -219,8 +219,8 @@ exports.markAllNotificationsAsCompleted = markAllNotificationsAsCompleted;
 // Create a notification (utility function for internal use)
 const createNotification = (_a) => __awaiter(void 0, [_a], void 0, function* ({ userId, title, description, type = notifications_1.NotificationType.SYSTEM, priority = notifications_1.PriorityLevel.MEDIUM, relatedAccountId = null, }) {
     try {
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
-        const notificationRepo = (0, typeorm_1.getRepository)(notifications_1.Notification);
+        const userRepo = database_1.default.getRepository(user_1.User);
+        const notificationRepo = database_1.default.getRepository(notifications_1.Notification);
         console.log(`This is User ID`, userId);
         // Validate the user exists
         const user = yield userRepo.findOne({ where: { id: userId } });

@@ -13,7 +13,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getSingleUser = exports.getAllUsers = exports.deleteUser = exports.editUser = exports.validatePassword = exports.createUser = exports.createAdminUser = void 0;
-const typeorm_1 = require("typeorm");
+const database_1 = __importDefault(require("../config/database"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const user_1 = require("../models/user");
 const errorHandler_1 = __importDefault(require("../utils/errorHandler"));
@@ -25,7 +25,7 @@ const createAdminUser = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
         if (!email || !password || !fullName) {
             throw new errorHandler_1.default("All fields are required", 400);
         }
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const userRepo = database_1.default.getRepository(user_1.User);
         const existingUser = yield userRepo.findOne({
             where: { email },
         });
@@ -39,6 +39,7 @@ const createAdminUser = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
             fullName,
             phone,
             userType: user_1.UserType.ADMIN,
+            isEmailVerified: true
         });
         yield userRepo.save(adminUser);
         res.status(201).json({
@@ -73,7 +74,7 @@ const createUser = (req, res, next) => __awaiter(void 0, void 0, void 0, functio
         if (!Object.values(user_1.UserType).includes(userType)) {
             throw new errorHandler_1.default("Invalid userType provided", 400);
         }
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const userRepo = database_1.default.getRepository(user_1.User);
         // Check if email already exists
         const existingUserByEmail = yield userRepo.findOne({ where: { email } });
         if (existingUserByEmail) {
@@ -187,7 +188,7 @@ const editUser = (req, res, next) => __awaiter(void 0, void 0, void 0, function*
         if (((_b = req.user) === null || _b === void 0 ? void 0 : _b.userType) !== "admin") {
             throw new errorHandler_1.default("Access denied: Only admins can edit users", 403);
         }
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const userRepo = database_1.default.getRepository(user_1.User);
         // Find the user to edit
         const userToEdit = yield userRepo.findOne({ where: { id } });
         if (!userToEdit) {
@@ -251,7 +252,7 @@ const deleteUser = (req, res, next) => __awaiter(void 0, void 0, void 0, functio
         if (((_b = req.user) === null || _b === void 0 ? void 0 : _b.userType) !== "admin") {
             throw new errorHandler_1.default("Access denied: Only admins can delete users", 403);
         }
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const userRepo = database_1.default.getRepository(user_1.User);
         const userToDelete = yield userRepo.findOne({
             where: { id: userIdToDelete },
         });
@@ -277,7 +278,7 @@ exports.deleteUser = deleteUser;
 const getAllUsers = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { userType, email, fullName, status } = req.query;
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const userRepo = database_1.default.getRepository(user_1.User);
         const query = userRepo.createQueryBuilder("user");
         if (userType) {
             query.andWhere("user.userType = :userType", { userType });
@@ -309,7 +310,7 @@ exports.getAllUsers = getAllUsers;
 const getSingleUser = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const userRepo = database_1.default.getRepository(user_1.User);
         const user = yield userRepo.findOne({ where: { id } });
         if (!user) {
             throw new errorHandler_1.default("User not found", 404);

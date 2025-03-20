@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { getRepository } from "typeorm";
+import dbConnect from "../config/database";
 import { Bank } from "../models/bank";
 import ErrorHandler from "../utils/errorHandler";
 
@@ -27,7 +27,7 @@ export const addBank = async (
       );
     }
 
-    const bankRepo = getRepository(Bank);
+    const bankRepo = dbConnect.getRepository(Bank);
     const newBank = bankRepo.create({
       bankName,
       accountName,
@@ -54,7 +54,7 @@ export const getAllBanks = async (
   next: NextFunction
 ) => {
   try {
-    const bankRepo = getRepository(Bank);
+    const bankRepo = dbConnect.getRepository(Bank);
     const banks = await bankRepo.find();
 
     res.status(200).json({
@@ -73,7 +73,7 @@ export const getFreeBanks = async (
   next: NextFunction
 ) => {
   try {
-    const bankRepo = getRepository(Bank);
+    const bankRepo = dbConnect.getRepository(Bank);
     const freeBanks = await bankRepo.find({ where: { funds: 0 } });
 
     res.status(200).json({
@@ -92,7 +92,7 @@ export const getFundedBanks = async (
   next: NextFunction
 ) => {
   try {
-    const bankRepo = getRepository(Bank);
+    const bankRepo = dbConnect.getRepository(Bank);
     const fundedBanks = await bankRepo
       .createQueryBuilder("bank")
       .where("bank.funds > :funds", { funds: 0 })
@@ -114,7 +114,7 @@ export const getBanksInUse = async (
   next: NextFunction
 ) => {
   try {
-    const bankRepo = getRepository(Bank);
+    const bankRepo = dbConnect.getRepository(Bank);
     const banksInUse = await bankRepo
       .createQueryBuilder("bank")
       .where("bank.funds > :funds", { funds: 0 })
@@ -140,7 +140,7 @@ export const updateBank = async (
     const { bankName, accountName, accountNumber, additionalNotes, funds } =
       req.body;
 
-    const bankRepo = getRepository(Bank);
+    const bankRepo = dbConnect.getRepository(Bank);
     const bank = await bankRepo.findOne({ where: { id } });
 
     if (!bank) {
@@ -176,7 +176,7 @@ export const deleteBank = async (
   try {
     const { id } = req.params;
 
-    const bankRepo = getRepository(Bank);
+    const bankRepo = dbConnect.getRepository(Bank);
     const bank = await bankRepo.findOne({ where: { id } });
 
     if (!bank) {
@@ -197,7 +197,7 @@ export const deleteBank = async (
 
 // Automatically reload free banks at 1 AM daily (Scheduler logic)
 export const reloadFreeBanks = async () => {
-  const bankRepo = getRepository(Bank);
+  const bankRepo = dbConnect.getRepository(Bank);
 
   try {
     // Update all banks with 0 funds to the default reload limit
@@ -223,7 +223,7 @@ export const getBankById = async (
   try {
     const { id } = req.params;
 
-    const bankRepo = getRepository(Bank);
+    const bankRepo = dbConnect.getRepository(Bank);
     const bank = await bankRepo.findOne({ where: { id } });
 
     if (!bank) {

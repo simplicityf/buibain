@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction, RequestHandler } from "express";
-import { getRepository } from "typeorm";
+import dbConnect from "../config/database";
 import bcrypt from "bcryptjs";
 import { Account } from "../models/accounts";
 import { User } from "../models/user";
@@ -36,8 +36,8 @@ export const createAccount: RequestHandler = async (
       throw new ErrorHandler("Unauthorized access", 401);
     }
 
-    const accountRepo = getRepository(Account);
-    const userRepo = getRepository(User);
+    const accountRepo = dbConnect.getRepository(Account);
+    const userRepo = dbConnect.getRepository(User);
 
     const existingAccount = await accountRepo.findOne({
       where: { account_username, platform },
@@ -98,8 +98,8 @@ export const updateAccount: RequestHandler = async (
       throw new ErrorHandler("Unauthorized access", 401);
     }
 
-    const accountRepo = getRepository(Account);
-    const userRepo = getRepository(User);
+    const accountRepo = dbConnect.getRepository(Account);
+    const userRepo = dbConnect.getRepository(User);
 
     const account = await accountRepo.findOne({
       where: { id },
@@ -155,7 +155,7 @@ export const deleteAccount: RequestHandler = async (
   try {
     const { id } = req.params;
 
-    const accountRepo = getRepository(Account);
+    const accountRepo = dbConnect.getRepository(Account);
     const account = await accountRepo.findOne({
       where: { id },
     });
@@ -189,7 +189,7 @@ export const getAllAccounts: RequestHandler = async (
       throw new ErrorHandler("Unauthorized access", 401);
     }
 
-    const accountRepo = getRepository(Account);
+    const accountRepo = dbConnect.getRepository(Account);
     const accounts = await accountRepo.find({
       select: ["id", "account_username", "platform", "status", "createdAt"],
     });
@@ -213,7 +213,7 @@ export const getSingleAccount: RequestHandler = async (
   try {
     const { id } = req.params;
 
-    const accountRepo = getRepository(Account);
+    const accountRepo = dbConnect.getRepository(Account);
     const account = await accountRepo.findOne({
       where: { id },
     });

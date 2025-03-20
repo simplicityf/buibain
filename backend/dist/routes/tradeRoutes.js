@@ -9,15 +9,23 @@ const authenticate_1 = require("../middlewares/authenticate");
 const user_1 = require("../models/user");
 const router = express_1.default.Router();
 router.use(authenticate_1.authenticate);
+// Currency and Rates Endpoints:
 router.get("/currency/rates", tradeController_1.getCurrencyRates);
-router.get("/payer/assignedTrade/:id", tradeController_1.getPayerTrade);
-router.post("/payer/trade/info", tradeController_1.getTradeDetails);
-router.post("/trade/mark-paid", tradeController_1.markTradeAsPaid);
-router.post("/message", tradeController_1.sendTradeChatMessage);
 router.post("/set-rates", (0, authenticate_1.roleAuth)([user_1.UserType.ADMIN, user_1.UserType.RATER]), tradeController_1.setOrUpdateRates);
 router.get("/get-rates", (0, authenticate_1.roleAuth)([user_1.UserType.ADMIN, user_1.UserType.RATER, user_1.UserType.PAYER]), tradeController_1.getRates);
+// Trade Endpoints:
+router.get("/live-trades", tradeController_1.getLiveTrades);
+router.post("/assign-live-trade", tradeController_1.assignLiveTrades);
+router.post("/payer/trade/info", tradeController_1.getTradeDetails);
+router.post("/mark-paid", tradeController_1.markTradeAsPaid);
+router.post("/message", tradeController_1.sendTradeChatMessage);
+router.get("/all-trades", tradeController_1.getAllTrades);
+router.get("/unfinished-trades", tradeController_1.getUnfinishedTrades);
+// Payer and Dashboard Endpoints:
 router.get("/dashboard", (0, authenticate_1.roleAuth)([user_1.UserType.ADMIN]), tradeController_1.getDashboardStats);
+router.get("/payer/assignedTrade/:id", tradeController_1.getPayerTrade);
 router.get("/completed", (0, authenticate_1.roleAuth)([user_1.UserType.ADMIN, user_1.UserType.CC]), tradeController_1.getCompletedPaidTrades);
+// Wallet and Offers Endpoints
 router.get("/wallet-balances", 
 // roleAuth([UserType.ADMIN, UserType.RATER]),
 tradeController_1.getWalletBalances);

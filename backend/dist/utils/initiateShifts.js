@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.stopShiftCrons = exports.initializeShiftCrons = void 0;
 const node_cron_1 = __importDefault(require("node-cron"));
 const typeorm_1 = require("typeorm");
+const database_1 = __importDefault(require("../config/database"));
 const user_1 = require("../models/user");
 const shift_1 = require("../models/shift");
 // Cron schedules for testing / production
@@ -56,8 +57,8 @@ function isShiftPeriodOver(shiftType, now) {
 function closeActiveShifts() {
     return __awaiter(this, void 0, void 0, function* () {
         var _a, _b, _c, _d;
-        const shiftRepo = (0, typeorm_1.getRepository)(shift_1.Shift);
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const shiftRepo = database_1.default.getRepository(shift_1.Shift);
+        const userRepo = database_1.default.getRepository(user_1.User);
         // Find shifts that are currently active or on break.
         const activeShifts = yield shiftRepo.find({
             where: {
@@ -102,8 +103,8 @@ function closeActiveShifts() {
  */
 function createNewShifts(shiftType) {
     return __awaiter(this, void 0, void 0, function* () {
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
-        const shiftRepo = (0, typeorm_1.getRepository)(shift_1.Shift);
+        const userRepo = database_1.default.getRepository(user_1.User);
+        const shiftRepo = database_1.default.getRepository(shift_1.Shift);
         const users = yield userRepo.find({
             where: {
                 userType: (0, typeorm_1.In)([user_1.UserType.PAYER, user_1.UserType.RATER, user_1.UserType.CC]),

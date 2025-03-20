@@ -1,5 +1,5 @@
 import { Response, NextFunction } from "express";
-import { getRepository } from "typeorm";
+import dbConnect from "../config/database";
 import { Message } from "../models/messages";
 import { User } from "../models/user";
 import { Chat } from "../models/chats";
@@ -20,8 +20,8 @@ export const createMessage = async (
       throw new ErrorHandler("Unauthorized access", 401);
     }
 
-    const chatRepo = getRepository(Chat);
-    const messageRepo = getRepository(Message);
+    const chatRepo = dbConnect.getRepository(Chat);
+    const messageRepo = dbConnect.getRepository(Message);
 
     // Find the chat
     const chat = await chatRepo.findOne({
@@ -33,7 +33,7 @@ export const createMessage = async (
     }
 
     // Find the sender (user)
-    const sender = await getRepository(User).findOne({ where: { id: userId } });
+    const sender = await dbConnect.getRepository(User).findOne({ where: { id: userId } });
     if (!sender) {
       throw new ErrorHandler("User not found", 404);
     }
@@ -93,8 +93,8 @@ export const markMessageAsSeen = async (
       throw new ErrorHandler("Unauthorized access", 401);
     }
 
-    const messageRepo = getRepository(Message);
-    const userRepo = getRepository(User);
+    const messageRepo = dbConnect.getRepository(Message);
+    const userRepo = dbConnect.getRepository(User);
 
     // Find the message
     const message = await messageRepo.findOne({
@@ -134,7 +134,7 @@ export const getMessagesInChat = async (
   try {
     const { chatId } = req.params;
 
-    const messageRepo = getRepository(Message);
+    const messageRepo = dbConnect.getRepository(Message);
 
     // Find all messages in the given chat
     const messages = await messageRepo.find({
@@ -170,7 +170,7 @@ export const getUnseenMessages = async (
       throw new ErrorHandler("Unauthorized access", 401);
     }
 
-    const messageRepo = getRepository(Message);
+    const messageRepo = dbConnect.getRepository(Message);
 
     // Find messages that have not been seen by the user
     const unseenMessages = await messageRepo
@@ -207,7 +207,7 @@ export const getMessageDetails = async (
   try {
     const { messageId } = req.params;
 
-    const messageRepo = getRepository(Message);
+    const messageRepo = dbConnect.getRepository(Message);
 
     // Find the message by its ID
     const message = await messageRepo.findOne({
@@ -237,7 +237,7 @@ export const deleteMessage = async (
   try {
     const { messageId } = req.params;
 
-    const messageRepo = getRepository(Message);
+    const messageRepo = dbConnect.getRepository(Message);
 
     // Find the message to be deleted
     const message = await messageRepo.findOne({ where: { id: messageId } });
@@ -272,8 +272,8 @@ export const getMessages = async (
       throw new ErrorHandler("Unauthorized access", 401);
     }
 
-    const chatRepo = getRepository(Chat);
-    const messageRepo = getRepository(Message);
+    const chatRepo = dbConnect.getRepository(Chat);
+    const messageRepo = dbConnect.getRepository(Message);
 
     const chat = await chatRepo.findOne({
       where: { id: chatId },

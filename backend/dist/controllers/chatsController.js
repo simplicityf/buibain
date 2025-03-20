@@ -15,7 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteChat = exports.getChat = exports.getChats = exports.createChat = void 0;
 const chats_1 = require("../models/chats");
 const user_1 = require("../models/user");
-const typeorm_1 = require("typeorm");
+const database_1 = __importDefault(require("../config/database"));
 const express_validator_1 = require("express-validator");
 const errorHandler_1 = __importDefault(require("../utils/errorHandler"));
 const messages_1 = require("../models/messages");
@@ -34,8 +34,8 @@ const createChat = (req, res, next) => __awaiter(void 0, void 0, void 0, functio
         if (new Set(participants).size !== participants.length) {
             throw new errorHandler_1.default("Participants cannot be duplicate", 400);
         }
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
-        const chatRepo = (0, typeorm_1.getRepository)(chats_1.Chat);
+        const userRepo = database_1.default.getRepository(user_1.User);
+        const chatRepo = database_1.default.getRepository(chats_1.Chat);
         // Verify that all participants exist in the system
         const users = yield userRepo.findByIds(participants);
         if (users.length !== participants.length) {
@@ -75,7 +75,7 @@ const getChats = (req, res, next) => __awaiter(void 0, void 0, void 0, function*
         if (!userId) {
             throw new errorHandler_1.default("Unauthorized access", 401);
         }
-        const chatRepo = (0, typeorm_1.getRepository)(chats_1.Chat);
+        const chatRepo = database_1.default.getRepository(chats_1.Chat);
         const chats = yield chatRepo
             .createQueryBuilder("chat")
             .leftJoinAndSelect("chat.participants", "user")
@@ -100,7 +100,7 @@ const getChat = (req, res, next) => __awaiter(void 0, void 0, void 0, function* 
         if (!userId) {
             throw new errorHandler_1.default("Unauthorized access", 401);
         }
-        const chatRepo = (0, typeorm_1.getRepository)(chats_1.Chat);
+        const chatRepo = database_1.default.getRepository(chats_1.Chat);
         const chat = yield chatRepo.findOne({
             where: { id: chatId },
             relations: ["participants", "messages", "messages.sender"], // Load sender relation
@@ -131,8 +131,8 @@ const deleteChat = (req, res, next) => __awaiter(void 0, void 0, void 0, functio
         if (!userId) {
             throw new errorHandler_1.default("Unauthorized access", 401);
         }
-        const chatRepo = (0, typeorm_1.getRepository)(chats_1.Chat);
-        const messageRepo = (0, typeorm_1.getRepository)(messages_1.Message);
+        const chatRepo = database_1.default.getRepository(chats_1.Chat);
+        const messageRepo = database_1.default.getRepository(messages_1.Message);
         // Find the chat with participants
         const chat = yield chatRepo.findOne({
             where: { id: chatId },

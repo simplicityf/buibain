@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction, RequestHandler } from "express";
-import { getRepository } from "typeorm";
+import dbConnect from "../config/database";
 import { ActivityLog, ActivityType } from "../models/activityLogs";
 import { User } from "../models/user";
 import ErrorHandler from "../utils/errorHandler";
@@ -26,8 +26,8 @@ export const createActivityLog: RequestHandler = async (
       throw new ErrorHandler("Invalid activity type", 400);
     }
 
-    const activityLogRepo = getRepository(ActivityLog);
-    const userRepo = getRepository(User);
+    const activityLogRepo = dbConnect.getRepository(ActivityLog);
+    const userRepo = dbConnect.getRepository(User);
 
     let user;
     if (userId) {
@@ -78,7 +78,7 @@ export const deleteActivityLogs: RequestHandler = async (
       throw new ErrorHandler("Valid log IDs array is required", 400);
     }
 
-    const activityLogRepo = getRepository(ActivityLog);
+    const activityLogRepo = dbConnect.getRepository(ActivityLog);
 
     // Delete logs
     const result = await activityLogRepo.delete(ids);
@@ -116,7 +116,7 @@ export const getActivityLogs: RequestHandler = async (
       sortOrder = "DESC",
     } = req.query;
 
-    const activityLogRepo = getRepository(ActivityLog);
+    const activityLogRepo = dbConnect.getRepository(ActivityLog);
 
     // Build where conditions
     const whereConditions: any = {};
@@ -190,7 +190,7 @@ export const getActivityLogById: RequestHandler = async (
   try {
     const { id } = req.params;
 
-    const activityLogRepo = getRepository(ActivityLog);
+    const activityLogRepo = dbConnect.getRepository(ActivityLog);
     const log = await activityLogRepo.findOne({
       where: { id },
       relations: ["user"],

@@ -34,6 +34,7 @@ export const createAdminUser: RequestHandler = async (req, res, next) => {
       fullName,
       phone,
       userType: UserType.ADMIN,
+      isEmailVerified: true
     });
 
     await userRepo.save(adminUser);

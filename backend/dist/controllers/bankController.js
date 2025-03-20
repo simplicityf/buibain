@@ -13,7 +13,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getBankById = exports.reloadFreeBanks = exports.deleteBank = exports.updateBank = exports.getBanksInUse = exports.getFundedBanks = exports.getFreeBanks = exports.getAllBanks = exports.addBank = void 0;
-const typeorm_1 = require("typeorm");
+const database_1 = __importDefault(require("../config/database"));
 const bank_1 = require("../models/bank");
 const errorHandler_1 = __importDefault(require("../utils/errorHandler"));
 // Add a new bank (Raters only)
@@ -27,7 +27,7 @@ const addBank = (req, res, next) => __awaiter(void 0, void 0, void 0, function* 
         if (accountNumber.length < 10 || accountNumber.length > 20) {
             throw new errorHandler_1.default("Account Number must be between 10 and 20 characters.", 400);
         }
-        const bankRepo = (0, typeorm_1.getRepository)(bank_1.Bank);
+        const bankRepo = database_1.default.getRepository(bank_1.Bank);
         const newBank = bankRepo.create({
             bankName,
             accountName,
@@ -50,7 +50,7 @@ exports.addBank = addBank;
 // Fetch all banks (Admin/Raters View)
 const getAllBanks = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const bankRepo = (0, typeorm_1.getRepository)(bank_1.Bank);
+        const bankRepo = database_1.default.getRepository(bank_1.Bank);
         const banks = yield bankRepo.find();
         res.status(200).json({
             success: true,
@@ -65,7 +65,7 @@ exports.getAllBanks = getAllBanks;
 // Fetch free banks (Banks with 0 balance)
 const getFreeBanks = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const bankRepo = (0, typeorm_1.getRepository)(bank_1.Bank);
+        const bankRepo = database_1.default.getRepository(bank_1.Bank);
         const freeBanks = yield bankRepo.find({ where: { funds: 0 } });
         res.status(200).json({
             success: true,
@@ -80,7 +80,7 @@ exports.getFreeBanks = getFreeBanks;
 // Fetch funded banks (Banks with funds > 0)
 const getFundedBanks = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const bankRepo = (0, typeorm_1.getRepository)(bank_1.Bank);
+        const bankRepo = database_1.default.getRepository(bank_1.Bank);
         const fundedBanks = yield bankRepo
             .createQueryBuilder("bank")
             .where("bank.funds > :funds", { funds: 0 })
@@ -98,7 +98,7 @@ exports.getFundedBanks = getFundedBanks;
 // Fetch banks in use (Payers View - Only funded banks available for transactions)
 const getBanksInUse = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const bankRepo = (0, typeorm_1.getRepository)(bank_1.Bank);
+        const bankRepo = database_1.default.getRepository(bank_1.Bank);
         const banksInUse = yield bankRepo
             .createQueryBuilder("bank")
             .where("bank.funds > :funds", { funds: 0 })
@@ -118,7 +118,7 @@ const updateBank = (req, res, next) => __awaiter(void 0, void 0, void 0, functio
     try {
         const { id } = req.params;
         const { bankName, accountName, accountNumber, additionalNotes, funds } = req.body;
-        const bankRepo = (0, typeorm_1.getRepository)(bank_1.Bank);
+        const bankRepo = database_1.default.getRepository(bank_1.Bank);
         const bank = yield bankRepo.findOne({ where: { id } });
         if (!bank) {
             throw new errorHandler_1.default("Bank not found.", 404);
@@ -146,7 +146,7 @@ exports.updateBank = updateBank;
 const deleteBank = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
-        const bankRepo = (0, typeorm_1.getRepository)(bank_1.Bank);
+        const bankRepo = database_1.default.getRepository(bank_1.Bank);
         const bank = yield bankRepo.findOne({ where: { id } });
         if (!bank) {
             throw new errorHandler_1.default("Bank not found.", 404);
@@ -165,7 +165,7 @@ const deleteBank = (req, res, next) => __awaiter(void 0, void 0, void 0, functio
 exports.deleteBank = deleteBank;
 // Automatically reload free banks at 1 AM daily (Scheduler logic)
 const reloadFreeBanks = () => __awaiter(void 0, void 0, void 0, function* () {
-    const bankRepo = (0, typeorm_1.getRepository)(bank_1.Bank);
+    const bankRepo = database_1.default.getRepository(bank_1.Bank);
     try {
         // Update all banks with 0 funds to the default reload limit
         const reloadLimit = 1000; // Example limit for reloading
@@ -185,7 +185,7 @@ exports.reloadFreeBanks = reloadFreeBanks;
 const getBankById = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
-        const bankRepo = (0, typeorm_1.getRepository)(bank_1.Bank);
+        const bankRepo = database_1.default.getRepository(bank_1.Bank);
         const bank = yield bankRepo.findOne({ where: { id } });
         if (!bank) {
             throw new errorHandler_1.default("Bank not found.", 404);

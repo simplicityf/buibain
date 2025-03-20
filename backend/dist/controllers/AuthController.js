@@ -12,9 +12,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resetPassword = exports.forgotPassword = exports.changePassword = exports.editUserDetails = exports.requestPasswordReset = exports.requestEmailVerification = exports.verifyEmail = exports.enableTwoFa = exports.getCurrentUser = exports.logout = exports.verifyTwoFa = exports.login = void 0;
+exports.resetPassword = exports.forgotPassword = exports.changePassword = exports.editUserDetails = exports.requestPasswordReset = exports.requestEmailVerification = exports.verifyEmail = exports.enableTwoFa = exports.getCurrentUser = exports.updateClockStatus = exports.logout = exports.verifyTwoFa = exports.login = void 0;
 const user_1 = require("../models/user");
-const typeorm_1 = require("typeorm");
+const database_1 = __importDefault(require("../config/database"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const speakeasy_1 = __importDefault(require("speakeasy"));
@@ -41,7 +41,7 @@ const createLog = (user, activity, description, details) => __awaiter(void 0, vo
     if (user === null) {
         return;
     }
-    const activityLogRepo = (0, typeorm_1.getRepository)(activityLogs_1.ActivityLog);
+    const activityLogRepo = database_1.default.getRepository(activityLogs_1.ActivityLog);
     const log = activityLogRepo.create({
         user: user,
         userRole: user === null || user === void 0 ? void 0 : user.userType,
@@ -59,7 +59,7 @@ const login = (req, res, next) => __awaiter(void 0, void 0, void 0, function* ()
             throw new errorHandler_1.default("Validation errors", 400);
         }
         const { email, password } = req.body;
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const userRepo = database_1.default.getRepository(user_1.User);
         const user = yield userRepo.findOne({ where: { email } });
         if (!user || !(yield bcryptjs_1.default.compare(password, user.password))) {
             yield createLog(null, activityLogs_1.ActivityType.USER_LOGIN, "Failed login attempt", {
@@ -100,20 +100,20 @@ exports.login = login;
 const verifyTwoFa = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { email, twoFaCode } = req.body;
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const userRepo = database_1.default.getRepository(user_1.User);
         const user = yield userRepo.findOne({ where: { email } });
         if (!user || !user.twoFaCode || !user.twoFaExpires) {
             yield createLog(null, activityLogs_1.ActivityType.USER_LOGIN, "Failed 2FA verification", { email, reason: "2FA not initiated or user not found" });
             throw new errorHandler_1.default("2FA not initiated or user not found", 404);
         }
         if (new Date() > user.twoFaExpires || user.twoFaCode !== twoFaCode) {
-            yield createLog(user, activityLogs_1.ActivityType.USER_LOGIN, "Invalid 2FA attempt", {
-                email: user.email,
-            });
+            yield createLog(user, activityLogs_1.ActivityType.USER_LOGIN, "Invalid 2FA attempt", { email: user.email });
             throw new errorHandler_1.default("Invalid or expired 2FA code", 401);
         }
+        // Clear 2FA code and mark clockedIn as true (since the user is now active)
         user.twoFaCode = undefined;
         user.twoFaExpires = undefined;
+        user.clockedIn = true;
         yield userRepo.save(user);
         const token = jsonwebtoken_1.default.sign({ id: user.id, userType: user.userType }, JWT_SECRET, { expiresIn: TOKEN_EXPIRATION });
         setTokenCookie(res, token);
@@ -137,17 +137,17 @@ const logout = (req, res, next) => __awaiter(void 0, void 0, void 0, function* (
     var _a;
     try {
         if ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) {
-            const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+            const userRepo = database_1.default.getRepository(user_1.User);
             const user = yield userRepo.findOne({ where: { id: req.user.id } });
             if (user) {
+                // Update clockedIn to false on logout
+                user.clockedIn = false;
+                yield userRepo.save(user);
                 yield createLog(user, activityLogs_1.ActivityType.USER_LOGOUT, "User logged out successfully", {
                     email: user.email,
                     logoutTime: new Date().toISOString(),
                 });
-                server_1.io.emit("userStatusUpdate", {
-                    userId: user.id,
-                    status: "offline",
-                });
+                server_1.io.emit("userStatusUpdate", { userId: user.id, status: "offline" });
             }
         }
         res.clearCookie("token");
@@ -158,6 +158,34 @@ const logout = (req, res, next) => __awaiter(void 0, void 0, void 0, function* (
     }
 });
 exports.logout = logout;
+const updateClockStatus = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    try {
+        const { clockedIn } = req.body; // expect true (resume) or false (break)
+        const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.id; // assuming your authenticate middleware adds user data
+        if (!userId) {
+            throw new errorHandler_1.default("Unauthorized access", 401);
+        }
+        const userRepository = database_1.default.getRepository(user_1.User);
+        const user = yield userRepository.findOne({ where: { id: userId } });
+        if (!user) {
+            throw new errorHandler_1.default("User not found", 404);
+        }
+        user.clockedIn = clockedIn;
+        yield userRepository.save(user);
+        // Emit socket event for real-time updates if necessary
+        server_1.io.emit("userStatusUpdate", { userId: user.id, status: clockedIn ? "online" : "offline" });
+        res.json({
+            success: true,
+            message: `User clock status updated to ${clockedIn ? "online" : "offline"}`,
+            data: user,
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.updateClockStatus = updateClockStatus;
 const getCurrentUser = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     try {
@@ -165,7 +193,7 @@ const getCurrentUser = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
         if (!userId) {
             throw new errorHandler_1.default("Unauthorized access", 401);
         }
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const userRepo = database_1.default.getRepository(user_1.User);
         const user = yield userRepo.findOne({ where: { id: userId } });
         // if (!user || !user.isEmailVerified) {
         if (!user) {
@@ -191,7 +219,7 @@ const enableTwoFa = (req, res, next) => __awaiter(void 0, void 0, void 0, functi
         if (!userId) {
             throw new errorHandler_1.default("User ID is required", 400);
         }
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const userRepo = database_1.default.getRepository(user_1.User);
         const user = yield userRepo.findOne({ where: { id: userId } });
         if (!user) {
             throw new errorHandler_1.default("User not found", 404);
@@ -222,7 +250,7 @@ const verifyEmail = (req, res, next) => __awaiter(void 0, void 0, void 0, functi
         if (!password || typeof password !== "string" || password.length < 8) {
             throw new errorHandler_1.default("Password is required and must be at least 8 characters long", 400);
         }
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const userRepo = database_1.default.getRepository(user_1.User);
         const user = yield userRepo.findOne({
             where: { emailVerificationCode: code },
         });
@@ -265,7 +293,7 @@ const requestEmailVerification = (req, res, next) => __awaiter(void 0, void 0, v
         if (!userId) {
             throw new errorHandler_1.default("User ID is required", 400);
         }
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const userRepo = database_1.default.getRepository(user_1.User);
         const user = yield userRepo.findOne({ where: { id: userId } });
         if (!user) {
             throw new errorHandler_1.default("User not found", 404);
@@ -292,7 +320,7 @@ exports.requestEmailVerification = requestEmailVerification;
 const requestPasswordReset = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { email } = req.body;
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const userRepo = database_1.default.getRepository(user_1.User);
         const user = yield userRepo.findOne({ where: { email } });
         if (!user) {
             throw new errorHandler_1.default("User not found", 404);
@@ -329,7 +357,7 @@ const editUserDetails = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
         if (!userId) {
             throw new errorHandler_1.default("Unauthorized access", 401);
         }
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const userRepo = database_1.default.getRepository(user_1.User);
         const user = yield userRepo.findOne({ where: { id: userId } });
         if (!user) {
             throw new errorHandler_1.default("User not found", 404);
@@ -391,7 +419,7 @@ const changePassword = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
         if (!userId) {
             throw new errorHandler_1.default("Unauthorized access", 401);
         }
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const userRepo = database_1.default.getRepository(user_1.User);
         const user = yield userRepo.findOne({ where: { id: userId } });
         if (!user) {
             throw new errorHandler_1.default("User not found", 404);
@@ -424,7 +452,7 @@ const forgotPassword = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
         if (!email) {
             throw new errorHandler_1.default("Email is required", 400);
         }
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const userRepo = database_1.default.getRepository(user_1.User);
         const user = yield userRepo.findOne({ where: { email } });
         if (!user) {
             throw new errorHandler_1.default("User with this email does not exist", 404);
@@ -471,7 +499,7 @@ const resetPassword = (req, res, next) => __awaiter(void 0, void 0, void 0, func
         if (newPassword !== confirmNewPassword) {
             throw new errorHandler_1.default("Passwords do not match", 400);
         }
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const userRepo = database_1.default.getRepository(user_1.User);
         const user = yield userRepo.findOne({
             where: { emailVerificationCode: code },
         });

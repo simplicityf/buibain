@@ -8,13 +8,16 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.escalateTrade = escalateTrade;
 exports.deleteTrade = deleteTrade;
 exports.getAllTrades = getAllTrades;
 exports.getTradeById = getTradeById;
 exports.updateTrade = updateTrade;
-const typeorm_1 = require("typeorm");
+const database_1 = __importDefault(require("../config/database"));
 const escalatedTrades_1 = require("../models/escalatedTrades");
 const user_1 = require("../models/user");
 const chats_1 = require("../models/chats");
@@ -32,7 +35,7 @@ function escalateTrade(req, res) {
         const { tradeId, escalatedById, assignedPayerId, complaint, tradeHash, platform, amount, } = req.body;
         console.log(req.body);
         try {
-            const tradeRepo = (0, typeorm_1.getRepository)(trades_1.Trade);
+            const tradeRepo = database_1.default.getRepository(trades_1.Trade);
             const trade = yield tradeRepo.findOne({ where: { id: tradeId } });
             if (!complaint || !tradeId || !tradeHash) {
                 return res.status(400).json({ message: "In complete details" });
@@ -40,7 +43,7 @@ function escalateTrade(req, res) {
             if (!trade) {
                 return res.status(404).json({ message: "Trade not found." });
             }
-            const escalatedTradeRepo = (0, typeorm_1.getRepository)(escalatedTrades_1.EscalatedTrade);
+            const escalatedTradeRepo = database_1.default.getRepository(escalatedTrades_1.EscalatedTrade);
             const existingEscalation = yield escalatedTradeRepo.findOne({
                 where: { trade: { id: tradeId } },
             });
@@ -49,7 +52,7 @@ function escalateTrade(req, res) {
                     .status(400)
                     .json({ message: "This trade is already escalated." });
             }
-            const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+            const userRepo = database_1.default.getRepository(user_1.User);
             const ccUser = yield userRepo.findOne({ where: { userType: user_1.UserType.CC } });
             const payer = yield userRepo.findOne({ where: { id: assignedPayerId } });
             const escalatedBy = yield userRepo.findOne({
@@ -85,7 +88,7 @@ function deleteTrade(req, res) {
     return __awaiter(this, void 0, void 0, function* () {
         const { id } = req.params;
         try {
-            const tradeRepo = (0, typeorm_1.getRepository)(escalatedTrades_1.EscalatedTrade);
+            const tradeRepo = database_1.default.getRepository(escalatedTrades_1.EscalatedTrade);
             const trade = yield tradeRepo.findOne({
                 where: { id },
                 relations: ["chat"],
@@ -94,7 +97,7 @@ function deleteTrade(req, res) {
                 return res.status(404).json({ message: "Trade not found." });
             }
             if (trade.chat) {
-                const chatRepo = (0, typeorm_1.getRepository)(chats_1.Chat);
+                const chatRepo = database_1.default.getRepository(chats_1.Chat);
                 yield chatRepo.remove(trade.chat);
             }
             yield tradeRepo.remove(trade);
@@ -112,7 +115,7 @@ function getAllTrades(req, res) {
     return __awaiter(this, void 0, void 0, function* () {
         const { status } = req.query;
         try {
-            const tradeRepo = (0, typeorm_1.getRepository)(escalatedTrades_1.EscalatedTrade);
+            const tradeRepo = database_1.default.getRepository(escalatedTrades_1.EscalatedTrade);
             const query = tradeRepo
                 .createQueryBuilder("trade")
                 .leftJoinAndSelect("trade.chat", "chat")
@@ -142,8 +145,8 @@ function getTradeById(req, res) {
         var _a;
         const { id } = req.params;
         try {
-            const tradeRepo = (0, typeorm_1.getRepository)(escalatedTrades_1.EscalatedTrade);
-            const accountRepo = (0, typeorm_1.getRepository)(accounts_1.Account);
+            const tradeRepo = database_1.default.getRepository(escalatedTrades_1.EscalatedTrade);
+            const accountRepo = database_1.default.getRepository(accounts_1.Account);
             const trade = yield tradeRepo.findOne({
                 where: { id },
                 relations: [
@@ -210,7 +213,7 @@ function updateTrade(req, res) {
         const { id } = req.params;
         const updateData = req.body;
         try {
-            const tradeRepo = (0, typeorm_1.getRepository)(escalatedTrades_1.EscalatedTrade);
+            const tradeRepo = database_1.default.getRepository(escalatedTrades_1.EscalatedTrade);
             const trade = yield tradeRepo.findOne({ where: { id } });
             if (!trade) {
                 return res.status(404).json({ message: "Trade not found." });

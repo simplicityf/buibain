@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction, RequestHandler } from "express";
-import { getRepository } from "typeorm";
+import dbConnect from "../config/database";
 import { validationResult } from "express-validator";
 import { UserRequest } from "../middlewares/authenticate";
 import ErrorHandler from "../utils/errorHandler";
@@ -23,7 +23,7 @@ export const getUserNotifications: RequestHandler = async (
       throw new ErrorHandler("Unauthorized access", 401);
     }
 
-    const notificationRepo = getRepository(Notification);
+    const notificationRepo = dbConnect.getRepository(Notification);
     const notifications = await notificationRepo.find({
       where: { user: { id: userId } },
       relations: ["relatedAccount"],
@@ -51,7 +51,7 @@ export const markAllNotificationsAsRead: RequestHandler = async (
       throw new ErrorHandler("Unauthorized access", 401);
     }
 
-    const notificationRepo = getRepository(Notification);
+    const notificationRepo = dbConnect.getRepository(Notification);
 
     const result = await notificationRepo
       .createQueryBuilder()
@@ -94,7 +94,7 @@ export const markNotificationAsRead: RequestHandler = async (
       throw new ErrorHandler("Unauthorized access", 401);
     }
 
-    const notificationRepo = getRepository(Notification);
+    const notificationRepo = dbConnect.getRepository(Notification);
     const notification = await notificationRepo.findOne({
       where: { id: notificationId, user: { id: userId } },
     });
@@ -139,7 +139,7 @@ export const deleteNotification: RequestHandler = async (
       throw new ErrorHandler("Unauthorized access", 401);
     }
 
-    const notificationRepo = getRepository(Notification);
+    const notificationRepo = dbConnect.getRepository(Notification);
     const notification = await notificationRepo.findOne({
       where: { id: notificationId, user: { id: userId } },
     });
@@ -190,7 +190,7 @@ export const setupNotificationSocket = (io: any) => {
       "markNotificationRead",
       async (data: { userId: string; notificationId: string }) => {
         try {
-          const notificationRepo = getRepository(Notification);
+          const notificationRepo = dbConnect.getRepository(Notification);
           const notification = await notificationRepo.findOne({
             where: { id: data.notificationId, user: { id: data.userId } },
           });
@@ -224,7 +224,7 @@ export const markAllNotificationsAsCompleted: RequestHandler = async (
       throw new ErrorHandler("Unauthorized access", 401);
     }
 
-    const notificationRepo = getRepository(Notification);
+    const notificationRepo = dbConnect.getRepository(Notification);
 
     const result = await notificationRepo
       .createQueryBuilder()
@@ -262,8 +262,8 @@ export const createNotification = async ({
   relatedAccountId?: string | null;
 }) => {
   try {
-    const userRepo = getRepository(User);
-    const notificationRepo = getRepository(Notification);
+    const userRepo = dbConnect.getRepository(User);
+    const notificationRepo = dbConnect.getRepository(Notification);
     console.log(`This is User ID`, userId);
     // Validate the user exists
     const user = await userRepo.findOne({ where: { id: userId } });

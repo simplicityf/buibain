@@ -13,7 +13,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getMessages = exports.deleteMessage = exports.getMessageDetails = exports.getUnseenMessages = exports.getMessagesInChat = exports.markMessageAsSeen = exports.createMessage = void 0;
-const typeorm_1 = require("typeorm");
+const database_1 = __importDefault(require("../config/database"));
 const messages_1 = require("../models/messages");
 const user_1 = require("../models/user");
 const chats_1 = require("../models/chats");
@@ -27,8 +27,8 @@ const createMessage = (req, res, next) => __awaiter(void 0, void 0, void 0, func
         if (!userId) {
             throw new errorHandler_1.default("Unauthorized access", 401);
         }
-        const chatRepo = (0, typeorm_1.getRepository)(chats_1.Chat);
-        const messageRepo = (0, typeorm_1.getRepository)(messages_1.Message);
+        const chatRepo = database_1.default.getRepository(chats_1.Chat);
+        const messageRepo = database_1.default.getRepository(messages_1.Message);
         // Find the chat
         const chat = yield chatRepo.findOne({
             where: { id: chatId },
@@ -38,7 +38,7 @@ const createMessage = (req, res, next) => __awaiter(void 0, void 0, void 0, func
             throw new errorHandler_1.default("Chat not found", 404);
         }
         // Find the sender (user)
-        const sender = yield (0, typeorm_1.getRepository)(user_1.User).findOne({ where: { id: userId } });
+        const sender = yield database_1.default.getRepository(user_1.User).findOne({ where: { id: userId } });
         if (!sender) {
             throw new errorHandler_1.default("User not found", 404);
         }
@@ -83,8 +83,8 @@ const markMessageAsSeen = (req, res, next) => __awaiter(void 0, void 0, void 0, 
         if (!userId) {
             throw new errorHandler_1.default("Unauthorized access", 401);
         }
-        const messageRepo = (0, typeorm_1.getRepository)(messages_1.Message);
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const messageRepo = database_1.default.getRepository(messages_1.Message);
+        const userRepo = database_1.default.getRepository(user_1.User);
         // Find the message
         const message = yield messageRepo.findOne({
             where: { id: messageId },
@@ -115,7 +115,7 @@ exports.markMessageAsSeen = markMessageAsSeen;
 const getMessagesInChat = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { chatId } = req.params;
-        const messageRepo = (0, typeorm_1.getRepository)(messages_1.Message);
+        const messageRepo = database_1.default.getRepository(messages_1.Message);
         // Find all messages in the given chat
         const messages = yield messageRepo.find({
             where: { chat: { id: chatId } },
@@ -144,7 +144,7 @@ const getUnseenMessages = (req, res, next) => __awaiter(void 0, void 0, void 0, 
         if (!userId) {
             throw new errorHandler_1.default("Unauthorized access", 401);
         }
-        const messageRepo = (0, typeorm_1.getRepository)(messages_1.Message);
+        const messageRepo = database_1.default.getRepository(messages_1.Message);
         // Find messages that have not been seen by the user
         const unseenMessages = yield messageRepo
             .createQueryBuilder("message")
@@ -171,7 +171,7 @@ exports.getUnseenMessages = getUnseenMessages;
 const getMessageDetails = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { messageId } = req.params;
-        const messageRepo = (0, typeorm_1.getRepository)(messages_1.Message);
+        const messageRepo = database_1.default.getRepository(messages_1.Message);
         // Find the message by its ID
         const message = yield messageRepo.findOne({
             where: { id: messageId },
@@ -194,7 +194,7 @@ exports.getMessageDetails = getMessageDetails;
 const deleteMessage = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { messageId } = req.params;
-        const messageRepo = (0, typeorm_1.getRepository)(messages_1.Message);
+        const messageRepo = database_1.default.getRepository(messages_1.Message);
         // Find the message to be deleted
         const message = yield messageRepo.findOne({ where: { id: messageId } });
         if (!message) {
@@ -221,8 +221,8 @@ const getMessages = (req, res, next) => __awaiter(void 0, void 0, void 0, functi
         if (!userId) {
             throw new errorHandler_1.default("Unauthorized access", 401);
         }
-        const chatRepo = (0, typeorm_1.getRepository)(chats_1.Chat);
-        const messageRepo = (0, typeorm_1.getRepository)(messages_1.Message);
+        const chatRepo = database_1.default.getRepository(chats_1.Chat);
+        const messageRepo = database_1.default.getRepository(messages_1.Message);
         const chat = yield chatRepo.findOne({
             where: { id: chatId },
             relations: ["participants"],

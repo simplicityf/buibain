@@ -1,5 +1,6 @@
 import cron from "node-cron";
-import { getRepository, In, Between } from "typeorm";
+import { In, Between } from "typeorm";
+import dbConnect from "../config/database";
 import { User, UserType } from "../models/user";
 import { Shift, ShiftType, ShiftStatus, ShiftEndType } from "../models/shift";
 
@@ -42,8 +43,8 @@ function isShiftPeriodOver(shiftType: ShiftType, now: Date): boolean {
  * Updates open shifts, but only closes those whose period is over.
  */
 async function closeActiveShifts() {
-  const shiftRepo = getRepository(Shift);
-  const userRepo = getRepository(User);
+  const shiftRepo = dbConnect.getRepository(Shift);
+  const userRepo = dbConnect.getRepository(User);
 
   // Find shifts that are currently active or on break.
   const activeShifts = await shiftRepo.find({
@@ -96,8 +97,8 @@ async function closeActiveShifts() {
  * if they don't already have an active or pending shift of that type today.
  */
 async function createNewShifts(shiftType: ShiftType) {
-  const userRepo = getRepository(User);
-  const shiftRepo = getRepository(Shift);
+  const userRepo = dbConnect.getRepository(User);
+  const shiftRepo = dbConnect.getRepository(Shift);
 
   const users = await userRepo.find({
     where: {

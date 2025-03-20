@@ -13,7 +13,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.isWithinShiftHours = exports.getCurrentShift = exports.forceEndShift = exports.getShiftMetrics = exports.endBreak = exports.startBreak = exports.clockOut = exports.clockIn = void 0;
-const typeorm_1 = require("typeorm");
+const database_1 = __importDefault(require("../config/database"));
 const shift_1 = require("../models/shift");
 const user_1 = require("../models/user");
 const errorHandler_1 = __importDefault(require("../utils/errorHandler"));
@@ -29,8 +29,8 @@ const clockIn = (req, res, next) => __awaiter(void 0, void 0, void 0, function* 
         const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.id;
         if (!userId)
             throw new errorHandler_1.default("Unauthorized", 401);
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
-        const shiftRepo = (0, typeorm_1.getRepository)(shift_1.Shift);
+        const userRepo = database_1.default.getRepository(user_1.User);
+        const shiftRepo = database_1.default.getRepository(shift_1.Shift);
         const user = yield userRepo.findOne({ where: { id: userId } });
         if (!user)
             throw new errorHandler_1.default("User not found", 404);
@@ -106,8 +106,8 @@ const clockOut = (req, res, next) => __awaiter(void 0, void 0, void 0, function*
     const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.id;
     if (!userId)
         return next(new errorHandler_1.default("Unauthorized", 401));
-    const userRepo = (0, typeorm_1.getRepository)(user_1.User);
-    const shiftRepo = (0, typeorm_1.getRepository)(shift_1.Shift);
+    const userRepo = database_1.default.getRepository(user_1.User);
+    const shiftRepo = database_1.default.getRepository(shift_1.Shift);
     try {
         const user = yield userRepo.findOne({ where: { id: userId } });
         if (!user)
@@ -174,7 +174,7 @@ const startBreak = (req, res, next) => __awaiter(void 0, void 0, void 0, functio
         const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.id;
         if (!userId)
             throw new errorHandler_1.default("Unauthorized", 401);
-        const shiftRepo = (0, typeorm_1.getRepository)(shift_1.Shift);
+        const shiftRepo = database_1.default.getRepository(shift_1.Shift);
         const activeShift = yield shiftRepo.findOne({
             where: {
                 user: { id: userId },
@@ -213,7 +213,7 @@ const endBreak = (req, res, next) => __awaiter(void 0, void 0, void 0, function*
         const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.id;
         if (!userId)
             throw new errorHandler_1.default("Unauthorized", 401);
-        const shiftRepo = (0, typeorm_1.getRepository)(shift_1.Shift);
+        const shiftRepo = database_1.default.getRepository(shift_1.Shift);
         const activeShift = yield shiftRepo.findOne({
             where: {
                 user: { id: userId },
@@ -252,7 +252,7 @@ const getShiftMetrics = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
         if (!userId)
             throw new errorHandler_1.default("User ID required", 400);
         const { startDate, endDate } = req.query;
-        const shiftRepo = (0, typeorm_1.getRepository)(shift_1.Shift);
+        const shiftRepo = database_1.default.getRepository(shift_1.Shift);
         const shifts = yield shiftRepo.find({
             where: {
                 user: { id: userId },
@@ -297,7 +297,7 @@ const forceEndShift = (req, res, next) => __awaiter(void 0, void 0, void 0, func
         if (!userId || ((_b = req.user) === null || _b === void 0 ? void 0 : _b.userType) !== user_1.UserType.ADMIN) {
             throw new errorHandler_1.default("Unauthorized", 401);
         }
-        const shiftRepo = (0, typeorm_1.getRepository)(shift_1.Shift);
+        const shiftRepo = database_1.default.getRepository(shift_1.Shift);
         const shift = yield shiftRepo.findOne({
             where: { id: shiftId },
             relations: ["user"],
@@ -314,7 +314,7 @@ const forceEndShift = (req, res, next) => __awaiter(void 0, void 0, void 0, func
         shift.isClockedIn = false;
         shift.totalWorkDuration = calculateWorkDuration(shift.clockInTime, now, shift.breaks);
         yield shiftRepo.save(shift);
-        yield (0, typeorm_1.getRepository)(user_1.User).update(shift.user.id, { clockedIn: false });
+        yield database_1.default.getRepository(user_1.User).update(shift.user.id, { clockedIn: false });
         server_1.io.emit("shiftUpdate", {
             userId: shift.user.id,
             status: "force-closed",
@@ -359,8 +359,8 @@ const getCurrentShift = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
         console.log(req.user);
         if (!userId)
             throw new errorHandler_1.default("Unauthorized", 401);
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
-        const shiftRepo = (0, typeorm_1.getRepository)(shift_1.Shift);
+        const userRepo = database_1.default.getRepository(user_1.User);
+        const shiftRepo = database_1.default.getRepository(shift_1.Shift);
         const user = yield userRepo.findOne({ where: { id: userId } });
         if (!user)
             throw new errorHandler_1.default("User not found", 404);

@@ -16,8 +16,7 @@ exports.onlineUsersManager = exports.io = void 0;
 const http_1 = __importDefault(require("http"));
 const socket_io_1 = require("socket.io");
 const app_1 = __importDefault(require("./app"));
-// import dbConnect from "./config/database";
-const typeorm_1 = require("typeorm");
+const database_1 = __importDefault(require("./config/database"));
 const notifications_1 = require("./models/notifications");
 // Error handling for unhandled rejections and exceptions
 process.on("unhandledRejection", (reason, promise) => {
@@ -33,7 +32,7 @@ exports.io = new socket_io_1.Server(server, {
     cors: {
         origin: "*",
         // origin: "https://app.bibuain.ng",
-        methods: ["GET", "POST", "PUT"],
+        methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"],
         credentials: true,
     },
 });
@@ -186,7 +185,7 @@ exports.io.on("connection", (socket) => {
     socket.on("markNotificationRead", (data) => __awaiter(void 0, void 0, void 0, function* () {
         try {
             if (data.userId === userId) {
-                const notificationRepo = (0, typeorm_1.getRepository)(notifications_1.Notification);
+                const notificationRepo = database_1.default.getRepository(notifications_1.Notification);
                 const notification = yield notificationRepo.findOne({
                     where: { id: data.notificationId, user: { id: data.userId } },
                 });

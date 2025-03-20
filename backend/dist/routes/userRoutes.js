@@ -17,6 +17,7 @@ router.post("/login", [
         .isLength({ min: 6 })
         .withMessage("Password must be at least 6 characters"),
 ], validateRequest_1.default, AuthController_1.login);
+router.put("/clock-status", AuthController_1.updateClockStatus);
 router.get("/me", authenticate_1.authenticate, AuthController_1.getCurrentUser);
 router.get("/logout", authenticate_1.authenticate, AuthController_1.logout);
 router.post("/enable-2fa", authenticate_1.authenticate, AuthController_1.enableTwoFa);

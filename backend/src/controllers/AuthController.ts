@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction, RequestHandler } from "express";
 import { User } from "../models/user";
-import { getRepository } from "typeorm";
+import dbConnect from "../config/database";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import speakeasy from "speakeasy";
@@ -35,7 +35,7 @@ const createLog = async (
   if (user === null) {
     return;
   }
-  const activityLogRepo = getRepository(ActivityLog);
+  const activityLogRepo = dbConnect.getRepository(ActivityLog);
   const log = activityLogRepo.create({
     user: user,
     userRole: user?.userType,
@@ -59,7 +59,7 @@ export const login = async (
     }
 
     const { email, password } = req.body;
-    const userRepo = getRepository(User);
+    const userRepo = dbConnect.getRepository(User);
     const user = await userRepo.findOne({ where: { email } });
 
     if (!user || !(await bcrypt.compare(password, user.password))) {
@@ -114,48 +114,30 @@ export const verifyTwoFa: RequestHandler = async (
 ) => {
   try {
     const { email, twoFaCode } = req.body;
-    const userRepo = getRepository(User);
-
+    const userRepo = dbConnect.getRepository(User);
     const user = await userRepo.findOne({ where: { email } });
     if (!user || !user.twoFaCode || !user.twoFaExpires) {
-      await createLog(
-        null,
-        ActivityType.USER_LOGIN,
-        "Failed 2FA verification",
-        { email, reason: "2FA not initiated or user not found" }
-      );
+      await createLog(null, ActivityType.USER_LOGIN, "Failed 2FA verification", { email, reason: "2FA not initiated or user not found" });
       throw new ErrorHandler("2FA not initiated or user not found", 404);
     }
-
     if (new Date() > user.twoFaExpires || user.twoFaCode !== twoFaCode) {
-      await createLog(user, ActivityType.USER_LOGIN, "Invalid 2FA attempt", {
-        email: user.email,
-      });
+      await createLog(user, ActivityType.USER_LOGIN, "Invalid 2FA attempt", { email: user.email });
       throw new ErrorHandler("Invalid or expired 2FA code", 401);
     }
-
+    // Clear 2FA code and mark clockedIn as true (since the user is now active)
     user.twoFaCode = undefined;
     user.twoFaExpires = undefined;
+    user.clockedIn = true;
     await userRepo.save(user);
 
-    const token = jwt.sign(
-      { id: user.id, userType: user.userType },
-      JWT_SECRET,
-      { expiresIn: TOKEN_EXPIRATION }
-    );
-
+    const token = jwt.sign({ id: user.id, userType: user.userType }, JWT_SECRET, { expiresIn: TOKEN_EXPIRATION });
     setTokenCookie(res, token);
 
-    await createLog(
-      user,
-      ActivityType.USER_LOGIN,
-      "User logged in successfully",
-      {
-        email: user.email,
-        userType: user.userType,
-        loginTime: new Date().toISOString(),
-      }
-    );
+    await createLog(user, ActivityType.USER_LOGIN, "User logged in successfully", {
+      email: user.email,
+      userType: user.userType,
+      loginTime: new Date().toISOString(),
+    });
 
     res.json({
       success: true,
@@ -167,6 +149,7 @@ export const verifyTwoFa: RequestHandler = async (
   }
 };
 
+
 export const logout = async (
   req: UserRequest,
   res: Response,
@@ -174,32 +157,59 @@ export const logout = async (
 ) => {
   try {
     if (req.user?.id) {
-      const userRepo = getRepository(User);
+      const userRepo = dbConnect.getRepository(User);
       const user = await userRepo.findOne({ where: { id: req.user.id } });
       if (user) {
-        await createLog(
-          user,
-          ActivityType.USER_LOGOUT,
-          "User logged out successfully",
-          {
-            email: user.email,
-            logoutTime: new Date().toISOString(),
-          }
-        );
+        // Update clockedIn to false on logout
+        user.clockedIn = false;
+        await userRepo.save(user);
 
-        io.emit("userStatusUpdate", {
-          userId: user.id,
-          status: "offline",
+        await createLog(user, ActivityType.USER_LOGOUT, "User logged out successfully", {
+          email: user.email,
+          logoutTime: new Date().toISOString(),
         });
+        io.emit("userStatusUpdate", { userId: user.id, status: "offline" });
       }
     }
-
     res.clearCookie("token");
     res.json({ success: true, message: "Logged out successfully" });
   } catch (error) {
     next(error);
   }
 };
+
+export const updateClockStatus = async (
+  req: UserRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { clockedIn } = req.body; // expect true (resume) or false (break)
+    const userId = req.user?.id; // assuming your authenticate middleware adds user data
+    if (!userId) {
+      throw new ErrorHandler("Unauthorized access", 401);
+    }
+    const userRepository = dbConnect.getRepository(User);
+    const user = await userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new ErrorHandler("User not found", 404);
+    }
+    user.clockedIn = clockedIn;
+    await userRepository.save(user);
+
+    // Emit socket event for real-time updates if necessary
+    io.emit("userStatusUpdate", { userId: user.id, status: clockedIn ? "online" : "offline" });
+
+    res.json({
+      success: true,
+      message: `User clock status updated to ${clockedIn ? "online" : "offline"}`,
+      data: user,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getCurrentUser = async (
   req: UserRequest,
   res: Response,
@@ -211,7 +221,7 @@ export const getCurrentUser = async (
       throw new ErrorHandler("Unauthorized access", 401);
     }
 
-    const userRepo = getRepository(User);
+    const userRepo = dbConnect.getRepository(User);
     const user = await userRepo.findOne({ where: { id: userId } });
 
     // if (!user || !user.isEmailVerified) {
@@ -246,7 +256,7 @@ export const enableTwoFa: RequestHandler = async (
       throw new ErrorHandler("User ID is required", 400);
     }
 
-    const userRepo = getRepository(User);
+    const userRepo = dbConnect.getRepository(User);
     const user = await userRepo.findOne({ where: { id: userId } });
     if (!user) {
       throw new ErrorHandler("User not found", 404);
@@ -286,7 +296,7 @@ export const verifyEmail: RequestHandler = async (req, res, next) => {
       );
     }
 
-    const userRepo = getRepository(User);
+    const userRepo = dbConnect.getRepository(User);
 
     const user = await userRepo.findOne({
       where: { emailVerificationCode: code },
@@ -345,7 +355,7 @@ export const requestEmailVerification: RequestHandler = async (
       throw new ErrorHandler("User ID is required", 400);
     }
 
-    const userRepo = getRepository(User);
+    const userRepo = dbConnect.getRepository(User);
     const user = await userRepo.findOne({ where: { id: userId } });
     if (!user) {
       throw new ErrorHandler("User not found", 404);
@@ -379,7 +389,7 @@ export const requestEmailVerification: RequestHandler = async (
 export const requestPasswordReset: RequestHandler = async (req, res, next) => {
   try {
     const { email } = req.body;
-    const userRepo = getRepository(User);
+    const userRepo = dbConnect.getRepository(User);
     const user = await userRepo.findOne({ where: { email } });
     if (!user) {
       throw new ErrorHandler("User not found", 404);
@@ -428,7 +438,7 @@ export const editUserDetails = async (
       throw new ErrorHandler("Unauthorized access", 401);
     }
 
-    const userRepo = getRepository(User);
+    const userRepo = dbConnect.getRepository(User);
     const user = await userRepo.findOne({ where: { id: userId } });
 
     if (!user) {
@@ -466,16 +476,16 @@ export const editUserDetails = async (
           fullName:
             fullName !== originalDetails.fullName
               ? {
-                  from: originalDetails.fullName,
-                  to: fullName,
-                }
+                from: originalDetails.fullName,
+                to: fullName,
+              }
               : undefined,
           avatar:
             user.avatar !== originalDetails.avatar
               ? {
-                  from: originalDetails.avatar,
-                  to: user.avatar,
-                }
+                from: originalDetails.avatar,
+                to: user.avatar,
+              }
               : undefined,
         },
       }
@@ -511,7 +521,7 @@ export const changePassword = async (
       throw new ErrorHandler("Unauthorized access", 401);
     }
 
-    const userRepo = getRepository(User);
+    const userRepo = dbConnect.getRepository(User);
     const user = await userRepo.findOne({ where: { id: userId } });
 
     if (!user) {
@@ -559,7 +569,7 @@ export const forgotPassword: RequestHandler = async (req, res, next) => {
       throw new ErrorHandler("Email is required", 400);
     }
 
-    const userRepo = getRepository(User);
+    const userRepo = dbConnect.getRepository(User);
 
     const user = await userRepo.findOne({ where: { email } });
 
@@ -621,7 +631,7 @@ export const resetPassword: RequestHandler = async (req, res, next) => {
       throw new ErrorHandler("Passwords do not match", 400);
     }
 
-    const userRepo = getRepository(User);
+    const userRepo = dbConnect.getRepository(User);
 
     const user = await userRepo.findOne({
       where: { emailVerificationCode: code },

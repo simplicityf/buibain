@@ -1,8 +1,7 @@
 import http from "http";
 import { Server } from "socket.io";
 import app from "./app";
-// import dbConnect from "./config/database";
-import { getRepository } from "typeorm";
+import dbConnect from "./config/database";
 import { Notification } from "./models/notifications";
 
 // Error handling for unhandled rejections and exceptions
@@ -202,7 +201,7 @@ io.on("connection", (socket) => {
     async (data: { userId: string; notificationId: string }) => {
       try {
         if (data.userId === userId) {
-          const notificationRepo = getRepository(Notification);
+          const notificationRepo = dbConnect.getRepository(Notification);
           const notification = await notificationRepo.findOne({
             where: { id: data.notificationId, user: { id: data.userId } },
           });

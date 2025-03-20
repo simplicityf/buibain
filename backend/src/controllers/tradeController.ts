@@ -1,7 +1,6 @@
-// src/controllers/platformController.ts
 import { Request, Response, NextFunction } from "express";
 import { UserRequest } from "../middlewares/authenticate";
-import { getRepository, In } from "typeorm";
+import dbConnect from "../config/database";
 import { Trade, TradeStatus } from "../models/trades";
 import { Rates } from "../models/rates";
 import { Account, ForexPlatform } from "../models/accounts";
@@ -11,6 +10,7 @@ import { BinanceService } from "../config/binance";
 import ErrorHandler from "../utils/errorHandler";
 import { EscalatedTrade } from "../models/escalatedTrades";
 import { User, UserType } from "../models/user";
+import { Not } from "typeorm";
 
 interface PlatformServices {
   noones: NoonesService[];
@@ -32,9 +32,11 @@ interface PlatformService {
   getBalance(): Promise<any>;
 }
 
-// Initialize platform services with accounts
+/**
+ * Initialize platform services with accounts from your database.
+ */
 async function initializePlatformServices(): Promise<PlatformServices> {
-  const accountRepo = getRepository(Account);
+  const accountRepo = dbConnect.getRepository(Account);
   const accounts = await accountRepo.find();
 
   const services: PlatformServices = {
@@ -84,6 +86,225 @@ async function initializePlatformServices(): Promise<PlatformServices> {
   return services;
 }
 
+// Helper function: aggregateLiveTrades
+const aggregateLiveTrades = async (): Promise<any[]> => {
+  const services = await initializePlatformServices();
+  let liveTrades: any[] = [];
+
+  // Fetch trades from Paxful
+  for (const service of services.paxful) {
+    try {
+      const paxfulTrades = await service.listActiveTrades();
+      liveTrades = liveTrades.concat(
+        paxfulTrades.map((trade: any) => ({
+          ...trade,
+          platform: "paxful",
+          accountId: service.accountId,
+        }))
+      );
+    } catch (error) {
+      console.error(
+        `Error fetching Paxful trades for account ${service.accountId}:`,
+        error
+      );
+    }
+  }
+
+  // Fetch trades from Noones
+  for (const service of services.noones) {
+    try {
+      const noonesTrades = await service.listActiveTrades();
+      liveTrades = liveTrades.concat(
+        noonesTrades.map((trade: any) => ({
+          ...trade,
+          platform: "noones",
+          accountId: service.accountId,
+        }))
+      );
+    } catch (error) {
+      console.error(
+        `Error fetching Noones trades for account ${service.accountId}:`,
+        error
+      );
+    }
+  }
+
+  // Filter for trades that are unassigned (e.g. status "PENDING")
+  return liveTrades.filter((trade) => trade.status === "PENDING");
+};
+
+/**
+ * GET live trades (aggregated from Paxful and Noones)
+ */
+export const getLiveTrades = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const unassignedTrades = await aggregateLiveTrades();
+    return res.status(200).json({
+      success: true,
+      data: unassignedTrades,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * Get all available payers (users with role PAYER who are currently clockedIn)
+ */
+const getAvailablePayers = async (): Promise<User[]> => {
+  const userRepository = dbConnect.getRepository(User);
+  const payers = await userRepository.find({
+    where: { userType: UserType.PAYER, clockedIn: true },
+    order: { createdAt: "ASC" },
+  });
+  return payers;
+};
+
+/**
+ * Round-robin assignment: Distribute all live (unassigned) trades among available payers.
+ */
+
+export const assignLiveTrades = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    // Get unassigned live trades.
+    const liveTrades = await aggregateLiveTrades();
+    if (!liveTrades || liveTrades.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "No unassigned live trades found.",
+      });
+    }
+
+    // Get available payers (role PAYER, clockedIn true).
+    const availablePayers = await getAvailablePayers();
+    if (availablePayers.length === 0) {
+      return next(new ErrorHandler("No available payers found", 400));
+    }
+
+    // Retrieve platform services.
+    const services = await initializePlatformServices();
+    const tradeRepository = dbConnect.getRepository(Trade);
+    const assignedTrades: Trade[] = [];
+    let payerIndex = 0;
+
+    // Iterate over each live trade.
+    for (const tradeData of liveTrades) {
+      // Use round-robin assignment.
+      const payer = availablePayers[payerIndex];
+      payerIndex = (payerIndex + 1) % availablePayers.length;
+
+      // Check if trade is already assigned.
+      const existingTrade = await tradeRepository.findOne({
+        where: { tradeHash: tradeData.trade_hash },
+      });
+      if (existingTrade) continue;
+
+      // Only fetch trade details and chat for platforms that support it.
+
+      let tradeDetails = null;
+      let tradeChat = null;
+
+      if (tradeData.platform === "noones" || tradeData.platform === "paxful") {
+        const platformKey = tradeData.platform as keyof PlatformServices;
+        // Narrow the service type to NoonesService or PaxfulService.
+        const platformService = services[platformKey]?.find(
+          (s: any) => s.accountId === tradeData.accountId
+        ) as (NoonesService | PaxfulService) | undefined;
+
+        if (platformService) {
+          tradeDetails = await platformService.getTradeDetails(tradeData.trade_hash);
+          tradeChat = await platformService.getTradeChat(tradeData.trade_hash);
+        }
+      }
+
+      // Create a new Trade record.
+      let trade = tradeRepository.create({
+        tradeHash: tradeData.trade_hash,
+        platform: tradeData.platform,
+        amount: tradeData.amount,
+        status: TradeStatus.ASSIGNED,
+        assignedPayerId: payer.id,
+        assignedAt: new Date(),
+        accountId: tradeData.accountId,
+      });
+      trade = await tradeRepository.save(trade);
+      assignedTrades.push(trade);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Live trades assigned to available payers using round-robin strategy.",
+      data: assignedTrades,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+
+/**
+ * Fetch trade details (including chat) based on stored trade data.
+ * Instead of manually inputting tradeHash, platform, and accountId,
+ * this endpoint uses the trade record (identified by tradeId) to retrieve those details.
+ */
+export const fetchTradeDetailsById = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { tradeId } = req.params;
+    const tradeRepository = dbConnect.getRepository(Trade);
+    const trade = await tradeRepository.findOne({ where: { id: tradeId } });
+    if (!trade) {
+      return next(new ErrorHandler("Trade not found", 404));
+    }
+    // Destructure stored values from the trade record.
+    const { tradeHash, platform, accountId } = trade;
+    const services = await initializePlatformServices();
+    let tradeDetails, tradeChat;
+
+    switch (platform) {
+      case "noones": {
+        const service = services.noones.find((s) => s.accountId === accountId);
+        if (!service) return next(new ErrorHandler("Noones account not found", 404));
+        tradeDetails = await service.getTradeDetails(tradeHash);
+        tradeChat = await service.getTradeChat(tradeHash);
+        break;
+      }
+      case "paxful": {
+        const service = services.paxful.find((s) => s.accountId === accountId);
+        if (!service) return next(new ErrorHandler("Paxful account not found", 404));
+        tradeDetails = await service.getTradeDetails(tradeHash);
+        // Assuming paxful returns { data: { trade: ... } }
+        tradeDetails = tradeDetails.data.trade;
+        tradeChat = await service.getTradeChat(tradeHash);
+        break;
+      }
+      default:
+        return next(new ErrorHandler("Unsupported platform", 400));
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: { tradeDetails, tradeChat },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * GET Currency Rates
+ */
 export const getCurrencyRates = async (
   req: Request,
   res: Response,
@@ -95,6 +316,7 @@ export const getCurrencyRates = async (
     const rates: {
       noonesRate?: number;
       binanceRate?: any;
+      paxfulRate?: number;
     } = {};
 
     // Get Noones rate
@@ -111,28 +333,31 @@ export const getCurrencyRates = async (
       try {
         const { btcUsdt } = await services.binance[0].fetchAllRates();
         rates.binanceRate = btcUsdt.price;
+        console.log("Binance rate: ", rates.binanceRate);
       } catch (error) {
         console.error("Error fetching Binance rate:", error);
       }
     }
 
     const paxfulRate = await paxfulService.getBitcoinPrice();
-
+    rates.paxfulRate = paxfulRate;
+    console.log("Paxful rate: ", rates.paxfulRate);
     if (Object.keys(rates).length === 0) {
-      return next(
-        new ErrorHandler("Failed to fetch rates from any platform", 500)
-      );
+      return next(new ErrorHandler("Failed to fetch rates from any platform", 500));
     }
 
-    return res
-      .status(200)
-      .json({ data: { ...rates, paxfulRate }, success: true });
+    return res.status(200).json({ data: { ...rates }, success: true });
   } catch (error: any) {
     console.log(error.message);
     return next(error);
   }
 };
-// Get trade details from any platform
+
+/**
+ * Get trade details from any platform.
+ * (Legacy endpoint expecting tradeHash, platform, accountId in the body.)
+ * Consider using fetchTradeDetailsById instead.
+ */
 export const getTradeDetails = async (
   req: UserRequest,
   res: Response,
@@ -143,10 +368,7 @@ export const getTradeDetails = async (
 
     if (!platform || !tradeHash || !accountId) {
       return next(
-        new ErrorHandler(
-          "Platform, trade hash, and account ID are required",
-          400
-        )
+        new ErrorHandler("Platform, trade hash, and account ID are required", 400)
       );
     }
 
@@ -191,65 +413,60 @@ export const getTradeDetails = async (
   }
 };
 
-// Send message in trade chat
+/**
+ * Send message in trade chat.
+ */
 export const sendTradeChatMessage = async (
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
   try {
-    const { platform, tradeHash, content, accountId } = req.body;
+    const { tradeId } = req.params;
+    const { content } = req.body;
+    if (!tradeId || !content) {
+      return next(new ErrorHandler("Trade ID and content are required", 400));
+    }
 
-    if (!platform || !tradeHash || !content || !accountId) {
-      return next(
-        new ErrorHandler(
-          "Platform, trade hash, content, and account ID are required",
-          400
-        )
-      );
+    const tradeRepository = dbConnect.getRepository(Trade);
+    const trade = await tradeRepository.findOne({ where: { id: tradeId } });
+    if (!trade) {
+      return next(new ErrorHandler("Trade not found", 404));
+    }
+
+    // Binance does not support sending trade messages.
+    if (trade.platform === "binance") {
+      return next(new ErrorHandler("Binance does not support sending trade messages", 400));
     }
 
     const services = await initializePlatformServices();
-    let response;
-
-    switch (platform) {
-      case "noones": {
-        const service = services.noones.find((s) => s.accountId === accountId);
-        if (!service) {
-          return next(new ErrorHandler("Account not found", 404));
-        }
-        response = await service.sendTradeMessage(tradeHash, content);
-        break;
-      }
-      case "paxful": {
-        const service = services.paxful.find((s) => s.accountId === accountId);
-        if (!service) {
-          return next(new ErrorHandler("Account not found", 404));
-        }
-        response = await service.sendTradeMessage(tradeHash, content);
-        break;
-      }
-      default:
-        return next(new ErrorHandler("Unsupported platform", 400));
+    const platformService = services[trade.platform]?.find(
+      (s) => s.accountId === trade.accountId
+    );
+    if (!platformService) {
+      return next(new ErrorHandler("Platform service not found", 404));
     }
 
+    await platformService.sendTradeMessage(trade.tradeHash, content);
     return res.status(200).json({
       success: true,
       message: "Message posted successfully",
-      data: response,
     });
   } catch (error) {
     return next(error);
   }
 };
 
+/**
+ * Get wallet balances.
+ */
 export const getWalletBalances = async (
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
   try {
-    const accountRepository = getRepository(Account);
+    const accountRepository = dbConnect.getRepository(Account);
     const accounts = await accountRepository.find({
       where: { status: "active" },
     });
@@ -257,7 +474,6 @@ export const getWalletBalances = async (
     const services: PlatformService[] = [];
     const balances: Record<string, any> = {};
 
-    // Create services for each account
     for (const account of accounts) {
       try {
         switch (account.platform) {
@@ -277,7 +493,6 @@ export const getWalletBalances = async (
               },
             });
             break;
-
           case "paxful":
             services.push({
               platform: "paxful",
@@ -300,7 +515,6 @@ export const getWalletBalances = async (
               },
             });
             break;
-
           case "binance":
             services.push({
               platform: "binance",
@@ -312,6 +526,7 @@ export const getWalletBalances = async (
                   apiSecret: account.api_secret,
                   label: account.account_username,
                 });
+                const balance = await service.getBTCBalance();
                 return [
                   {
                     currency: "BTC",
@@ -325,10 +540,7 @@ export const getWalletBalances = async (
             break;
         }
       } catch (error) {
-        console.error(
-          `Error initializing service for account ${account.id}:`,
-          error
-        );
+        console.error(`Error initializing service for account ${account.id}:`, error);
         balances[account.id] = {
           error: "Service initialization failed",
           platform: account.platform,
@@ -337,7 +549,6 @@ export const getWalletBalances = async (
       }
     }
 
-    // Fetch balances in parallel
     await Promise.all(
       services.map(async (service) => {
         try {
@@ -345,7 +556,7 @@ export const getWalletBalances = async (
           balances[service.accountId] = {
             platform: service.platform,
             label: service.label,
-            balances: balance, // Ensure balance is an array
+            balances: balance,
           };
         } catch (error) {
           console.error(`Error fetching balance for ${service.label}:`, error);
@@ -358,14 +569,12 @@ export const getWalletBalances = async (
       })
     );
 
-    // Transform balances to match frontend structure
     const transformedBalances: Record<string, any> = {};
     for (const [accountId, balanceData] of Object.entries(balances)) {
       if (balanceData.error) {
         transformedBalances[accountId] = balanceData;
         continue;
       }
-
       transformedBalances[accountId] = {
         balances: balanceData.balances.map((balance: WalletBalance) => ({
           currency: balance.currency,
@@ -388,38 +597,23 @@ export const getWalletBalances = async (
   }
 };
 
-// Controller to manually set or update rates
+/**
+ * Controller to manually set or update rates.
+ */
 export const setOrUpdateRates = async (
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
   try {
-    // Destructure the rates and additional fields from the request body
-    const { noonesRate, paxfulRate, sellingPrice, usdtNgnRate, markup2 } =
-      req.body;
+    const { noonesRate, paxfulRate, sellingPrice, usdtNgnRate, markup2 } = req.body;
 
-    if (
-      !noonesRate ||
-      !paxfulRate ||
-      !sellingPrice ||
-      !usdtNgnRate ||
-      !markup2
-    ) {
-      return next(
-        new ErrorHandler(
-          "All rates (noonesRate, paxfulRate, sellingPrice, usdtNgnRate, markup2) are required",
-          400
-        )
-      );
+    if (!noonesRate || !paxfulRate || !sellingPrice || !usdtNgnRate || !markup2) {
+      return next(new ErrorHandler("All rates (noonesRate, paxfulRate, sellingPrice, usdtNgnRate, markup2) are required", 400));
     }
 
-    // Get the Rates repository
-    const ratesRepository = getRepository(Rates);
-
-    // Check if rates already exist in the database
+    const ratesRepository = dbConnect.getRepository(Rates);
     let ratesAll = await ratesRepository.find();
-
     let rates = ratesAll.length > 0 ? ratesAll[0] : null;
 
     if (!rates) {
@@ -429,8 +623,6 @@ export const setOrUpdateRates = async (
       rates.sellingPrice = sellingPrice;
       rates.usdtNgnRate = usdtNgnRate;
       rates.markup2 = markup2;
-
-      // Save the new rates to the database
       await ratesRepository.save(rates);
 
       return res.status(201).json({
@@ -444,7 +636,6 @@ export const setOrUpdateRates = async (
       rates.sellingPrice = sellingPrice;
       rates.usdtNgnRate = usdtNgnRate;
       rates.markup2 = markup2;
-
       await ratesRepository.save(rates);
 
       return res.status(200).json({
@@ -458,26 +649,24 @@ export const setOrUpdateRates = async (
   }
 };
 
-// Get Rates
+/**
+ * GET Rates.
+ */
 export const getRates = async (
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
   try {
-    const ratesRepository = getRepository(Rates);
-
+    const ratesRepository = dbConnect.getRepository(Rates);
     const ratesAll = await ratesRepository.find();
-
     if (ratesAll.length === 0) {
       return res.status(200).json({
         success: true,
         data: {},
       });
     }
-
     const rates = ratesAll[0];
-
     return res.status(200).json({
       success: true,
       message: "Rates fetched successfully",
@@ -488,6 +677,9 @@ export const getRates = async (
   }
 };
 
+/**
+ * Get payer's assigned trade.
+ */
 export const getPayerTrade = async (
   req: UserRequest,
   res: Response,
@@ -495,8 +687,7 @@ export const getPayerTrade = async (
 ) => {
   try {
     const { id } = req.params;
-    const tradeRepository = getRepository(Trade);
-
+    const tradeRepository = dbConnect.getRepository(Trade);
     const assignedTrade = await tradeRepository.findOne({
       where: {
         assignedPayerId: id,
@@ -554,15 +745,8 @@ export const getPayerTrade = async (
       });
 
       if (!reloadedTrade?.assignedPayer) {
-        console.error(
-          `Failed to load assignedPayer relation for trade ${assignedTrade.id}`
-        );
-        return next(
-          new ErrorHandler(
-            "Error loading trade details: Missing assigned payer information",
-            500
-          )
-        );
+        console.error(`Failed to load assignedPayer relation for trade ${assignedTrade.id}`);
+        return next(new ErrorHandler("Error loading trade details: Missing assigned payer information", 500));
       }
 
       return res.status(200).json({
@@ -595,89 +779,79 @@ export const getPayerTrade = async (
   }
 };
 
+/**
+ * Mark a trade as paid and send a chat message (message provided by user) to notify the vendor.
+ */
 export const markTradeAsPaid = async (
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
   try {
-    const { platform, tradeHash, accountId } = req.body;
-
-    // Validate required fields
-    if (!platform || !tradeHash || !accountId) {
-      return next(
-        new ErrorHandler(
-          "Platform, trade hash, and account ID are required",
-          400
-        )
-      );
+    const { tradeId } = req.params;
+    const { message } = req.body;
+    if (!tradeId || !message) {
+      return next(new ErrorHandler("Trade ID and message are required", 400));
     }
 
-    // Initialize platform services
+    const tradeRepository = dbConnect.getRepository(Trade);
+    const trade = await tradeRepository.findOne({ where: { id: tradeId } });
+    if (!trade) {
+      return next(new ErrorHandler("Trade not found", 404));
+    }
+
+    // If the platform is Binance, which does not support these actions, return an error.
+    if (trade.platform === "binance") {
+      return next(new ErrorHandler("Binance does not support marking trades as paid", 400));
+    }
+
     const services = await initializePlatformServices();
-    let result;
-
-    // Handle the request based on the platform
-    switch (platform) {
-      case "noones": {
-        const service = services.noones.find((s) => s.accountId === accountId);
-        if (!service) {
-          return next(new ErrorHandler("Noones account not found", 404));
-        }
-        result = await service.markTradeAsPaid(tradeHash);
-        break;
-      }
-      case "paxful": {
-        const service = services.paxful.find((s) => s.accountId === accountId);
-        if (!service) {
-          return next(new ErrorHandler("Paxful account not found", 404));
-        }
-        result = await service.markTradeAsPaid(tradeHash);
-        break;
-      }
-      default:
-        return next(new ErrorHandler("Unsupported platform", 400));
+    const platformService = services[trade.platform]?.find(
+      (s) => s.accountId === trade.accountId
+    );
+    if (!platformService) {
+      return next(new ErrorHandler("Platform service not found", 404));
     }
 
-    // Return success response
+    // Call the platform-specific methods.
+    await platformService.markTradeAsPaid(trade.tradeHash);
+    await platformService.sendTradeMessage(trade.tradeHash, message);
+
     return res.status(200).json({
       success: true,
-      message: "Trade marked as paid successfully",
-      data: result,
+      message: "Trade marked as paid and vendor notified successfully",
     });
   } catch (error) {
     return next(error);
   }
 };
 
+/**
+ * Get dashboard stats.
+ */
 export const getDashboardStats = async (
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
   try {
-    const tradeRepository = getRepository(Trade);
-    const escalatedTradeRepository = getRepository(EscalatedTrade);
+    const tradeRepository = dbConnect.getRepository(Trade);
+    const escalatedTradeRepository = dbConnect.getRepository(EscalatedTrade);
 
-    // Fetch the number of currently assigned trades
     const currentlyAssigned = await tradeRepository.count({
       where: { status: TradeStatus.ASSIGNED },
     });
 
-    // Fetch the number of not yet assigned trades
     const notYetAssigned = await tradeRepository.count({
       where: { status: TradeStatus.PENDING },
     });
 
-    // Fetch the number of escalated trades
     const escalated = await escalatedTradeRepository.count({});
 
-    // Fetch the number of trades that are paid but not marked
     const paidButNotMarked = await tradeRepository.count({
       where: { status: TradeStatus.COMPLETED, completedAt: undefined },
     });
 
-    // Fetch the total amount of trades in NGN and BTC
     const totalTradesNGN = await tradeRepository
       .createQueryBuilder("trade")
       .select("SUM(trade.amount)", "totalNGN")
@@ -690,13 +864,9 @@ export const getDashboardStats = async (
       .where("trade.status = :status", { status: TradeStatus.COMPLETED })
       .getRawOne();
 
-    // Fetch the average response time of the payer (in seconds)
     const averageResponseTime = await tradeRepository
       .createQueryBuilder("trade")
-      .select(
-        "AVG(EXTRACT(EPOCH FROM (trade.completedAt - trade.assignedAt)))",
-        "averageResponseTime"
-      )
+      .select("AVG(EXTRACT(EPOCH FROM (trade.completedAt - trade.assignedAt)))", "averageResponseTime")
       .where("trade.status = :status", { status: TradeStatus.COMPLETED })
       .andWhere("trade.completedAt IS NOT NULL")
       .andWhere("trade.assignedAt IS NOT NULL")
@@ -721,18 +891,20 @@ export const getDashboardStats = async (
   }
 };
 
+/**
+ * Get completed paid trades with pagination.
+ */
 export const getCompletedPaidTrades = async (
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
   try {
-    const tradeRepository = getRepository(Trade);
+    const tradeRepository = dbConnect.getRepository(Trade);
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     const skip = (page - 1) * limit;
 
-    // Build the query with TypeORM
     const query = tradeRepository
       .createQueryBuilder("trade")
       .where({
@@ -744,9 +916,7 @@ export const getCompletedPaidTrades = async (
       .skip(skip)
       .take(limit);
 
-    // Get trades and total count
     const [trades, total] = await query.getManyAndCount();
-
     const totalPages = Math.ceil(total / limit);
 
     return res.status(200).json({
@@ -762,14 +932,10 @@ export const getCompletedPaidTrades = async (
       },
     });
   } catch (error: any) {
-    return next(
-      new ErrorHandler(
-        `Error retrieving completed trades: ${error.message}`,
-        500
-      )
-    );
+    return next(new ErrorHandler(`Error retrieving completed trades: ${error.message}`, 500));
   }
 };
+
 
 export const updateOffersMargin = async (
   req: Request,
@@ -965,45 +1131,28 @@ export const reassignTrade = async (
   next: NextFunction
 ) => {
   try {
-    const { tradeId, userId } = req.body;
-
+    const { tradeId } = req.params;
+    const { userId } = req.body;
     if (!tradeId || !userId) {
       return next(new ErrorHandler("Trade ID and User ID are required", 400));
     }
 
-    const tradeRepository = getRepository(Trade);
-    const trade = await tradeRepository.findOne({
-      where: { id: tradeId },
-      relations: ["assignedPayer"],
-    });
-
+    const tradeRepository = dbConnect.getRepository(Trade);
+    const trade = await tradeRepository.findOne({ where: { id: tradeId }, relations: ["assignedPayer"] });
     if (!trade) {
       return next(new ErrorHandler("Trade not found", 404));
     }
-
-    if (
-      trade.status === TradeStatus.COMPLETED ||
-      trade.status === TradeStatus.CANCELLED
-    ) {
+    if (trade.status === TradeStatus.COMPLETED || trade.status === TradeStatus.CANCELLED) {
       return next(new ErrorHandler("This trade cannot be reassigned", 400));
     }
 
-    const userRepository = getRepository(User);
+    const userRepository = dbConnect.getRepository(User);
     const user = await userRepository.findOne({ where: { id: userId } });
-    console.log(user);
-    if (!user || user.userType !== "payer") {
-      return next(
-        new ErrorHandler(
-          "Invalid user. Only customer support users can be assigned the trade",
-          400
-        )
-      );
+    if (!user || user.userType !== UserType.PAYER) {
+      return next(new ErrorHandler("Invalid user. Only payers can be assigned the trade", 400));
     }
-
     if (trade.assignedPayerId === userId) {
-      return next(
-        new ErrorHandler("The trade is already assigned to this user", 400)
-      );
+      return next(new ErrorHandler("The trade is already assigned to this user", 400));
     }
 
     trade.assignedPayerId = userId;
@@ -1011,14 +1160,59 @@ export const reassignTrade = async (
     trade.status = TradeStatus.ASSIGNED;
 
     await tradeRepository.save(trade);
-
-    return res.status(200).json({
-      success: true,
-      message: "Trade reassigned successfully",
-      data: trade,
-    });
+    return res.status(200).json({ success: true, message: "Trade reassigned successfully", data: trade });
   } catch (error) {
-    console.error(error);
     return next(error);
   }
 };
+
+export const getAllTrades = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const tradeRepository = dbConnect.getRepository(Trade);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+
+    const [trades, total] = await tradeRepository.findAndCount({
+      skip,
+      take: limit,
+      order: { createdAt: "DESC" },
+    });
+
+    const totalPages = Math.ceil(total / limit);
+
+    return res.status(200).json({
+      success: true,
+      data: { trades, pagination: { total, totalPages, currentPage: page, itemsPerPage: limit } },
+    });
+  } catch (error: any) {
+    return next(new ErrorHandler(`Error retrieving trades: ${error.message}`, 500));
+  }
+};
+
+export const getUnfinishedTrades = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const tradeRepository = dbConnect.getRepository(Trade);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+
+    // Example: return trades that are not completed or not marked as "Paid"
+    const [trades, total] = await tradeRepository.findAndCount({
+      where: { status: Not(TradeStatus.COMPLETED) },
+      skip,
+      take: limit,
+      order: { createdAt: "DESC" },
+    });
+
+    const totalPages = Math.ceil(total / limit);
+
+    return res.status(200).json({
+      success: true,
+      data: { trades, pagination: { total, totalPages, currentPage: page, itemsPerPage: limit } },
+    });
+  } catch (error: any) {
+    return next(new ErrorHandler(`Error retrieving unfinished trades: ${error.message}`, 500));
+  }
+};
+

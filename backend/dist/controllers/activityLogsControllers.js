@@ -13,11 +13,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getActivityLogById = exports.getActivityLogs = exports.deleteActivityLogs = exports.createActivityLog = void 0;
-const typeorm_1 = require("typeorm");
+const database_1 = __importDefault(require("../config/database"));
 const activityLogs_1 = require("../models/activityLogs");
 const user_1 = require("../models/user");
 const errorHandler_1 = __importDefault(require("../utils/errorHandler"));
-const typeorm_2 = require("typeorm");
+const typeorm_1 = require("typeorm");
 // Create a new activity log
 const createActivityLog = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
@@ -32,8 +32,8 @@ const createActivityLog = (req, res, next) => __awaiter(void 0, void 0, void 0, 
         if (!Object.values(activityLogs_1.ActivityType).includes(activity)) {
             throw new errorHandler_1.default("Invalid activity type", 400);
         }
-        const activityLogRepo = (0, typeorm_1.getRepository)(activityLogs_1.ActivityLog);
-        const userRepo = (0, typeorm_1.getRepository)(user_1.User);
+        const activityLogRepo = database_1.default.getRepository(activityLogs_1.ActivityLog);
+        const userRepo = database_1.default.getRepository(user_1.User);
         let user;
         if (userId) {
             user = yield userRepo.findOne({ where: { id: userId } });
@@ -75,7 +75,7 @@ const deleteActivityLogs = (req, res, next) => __awaiter(void 0, void 0, void 0,
         if (!ids || !Array.isArray(ids) || ids.length === 0) {
             throw new errorHandler_1.default("Valid log IDs array is required", 400);
         }
-        const activityLogRepo = (0, typeorm_1.getRepository)(activityLogs_1.ActivityLog);
+        const activityLogRepo = database_1.default.getRepository(activityLogs_1.ActivityLog);
         // Delete logs
         const result = yield activityLogRepo.delete(ids);
         if (result.affected === 0) {
@@ -95,11 +95,11 @@ exports.deleteActivityLogs = deleteActivityLogs;
 const getActivityLogs = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { startDate, endDate, activity, userId, userRole, isSystemGenerated, page = 1, limit = 10, sortBy = "timestamp", sortOrder = "DESC", } = req.query;
-        const activityLogRepo = (0, typeorm_1.getRepository)(activityLogs_1.ActivityLog);
+        const activityLogRepo = database_1.default.getRepository(activityLogs_1.ActivityLog);
         // Build where conditions
         const whereConditions = {};
         if (startDate && endDate) {
-            whereConditions.timestamp = (0, typeorm_2.Between)(new Date(startDate), new Date(endDate));
+            whereConditions.timestamp = (0, typeorm_1.Between)(new Date(startDate), new Date(endDate));
         }
         if (activity) {
             whereConditions.activity = activity;
@@ -152,7 +152,7 @@ exports.getActivityLogs = getActivityLogs;
 const getActivityLogById = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
-        const activityLogRepo = (0, typeorm_1.getRepository)(activityLogs_1.ActivityLog);
+        const activityLogRepo = database_1.default.getRepository(activityLogs_1.ActivityLog);
         const log = yield activityLogRepo.findOne({
             where: { id },
             relations: ["user"],

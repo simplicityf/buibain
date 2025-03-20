@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { getRepository } from "typeorm";
+import dbConnect from "../config/database";
 import { EscalatedTrade, TradeStatus } from "../models/escalatedTrades";
 import { User, UserType } from "../models/user";
 import { Chat } from "../models/chats";
@@ -29,7 +29,7 @@ export async function escalateTrade(
   } = req.body;
   console.log(req.body);
   try {
-    const tradeRepo = getRepository(Trade);
+    const tradeRepo = dbConnect.getRepository(Trade);
 
     const trade = await tradeRepo.findOne({ where: { id: tradeId } });
 
@@ -40,7 +40,7 @@ export async function escalateTrade(
       return res.status(404).json({ message: "Trade not found." });
     }
 
-    const escalatedTradeRepo = getRepository(EscalatedTrade);
+    const escalatedTradeRepo = dbConnect.getRepository(EscalatedTrade);
     const existingEscalation = await escalatedTradeRepo.findOne({
       where: { trade: { id: tradeId } },
     });
@@ -51,7 +51,7 @@ export async function escalateTrade(
         .json({ message: "This trade is already escalated." });
     }
 
-    const userRepo = getRepository(User);
+    const userRepo = dbConnect.getRepository(User);
     const ccUser = await userRepo.findOne({ where: { userType: UserType.CC } });
     const payer = await userRepo.findOne({ where: { id: assignedPayerId } });
     const escalatedBy = await userRepo.findOne({
@@ -93,7 +93,7 @@ export async function deleteTrade(
   const { id } = req.params;
 
   try {
-    const tradeRepo = getRepository(EscalatedTrade);
+    const tradeRepo = dbConnect.getRepository(EscalatedTrade);
     const trade = await tradeRepo.findOne({
       where: { id },
       relations: ["chat"],
@@ -104,7 +104,7 @@ export async function deleteTrade(
     }
 
     if (trade.chat) {
-      const chatRepo = getRepository(Chat);
+      const chatRepo = dbConnect.getRepository(Chat);
       await chatRepo.remove(trade.chat);
     }
 
@@ -125,7 +125,7 @@ export async function getAllTrades(
   const { status } = req.query;
 
   try {
-    const tradeRepo = getRepository(EscalatedTrade);
+    const tradeRepo = dbConnect.getRepository(EscalatedTrade);
     const query = tradeRepo
       .createQueryBuilder("trade")
       .leftJoinAndSelect("trade.chat", "chat")
@@ -157,8 +157,8 @@ export async function getTradeById(
   const { id } = req.params;
 
   try {
-    const tradeRepo = getRepository(EscalatedTrade);
-    const accountRepo = getRepository(Account);
+    const tradeRepo = dbConnect.getRepository(EscalatedTrade);
+    const accountRepo = dbConnect.getRepository(Account);
     const trade = await tradeRepo.findOne({
       where: { id },
       relations: [
@@ -232,7 +232,7 @@ export async function updateTrade(
   const updateData = req.body;
 
   try {
-    const tradeRepo = getRepository(EscalatedTrade);
+    const tradeRepo = dbConnect.getRepository(EscalatedTrade);
     const trade = await tradeRepo.findOne({ where: { id } });
 
     if (!trade) {

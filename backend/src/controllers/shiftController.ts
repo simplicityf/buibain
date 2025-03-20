@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction, RequestHandler } from "express";
-import { getRepository, Between, Raw } from "typeorm";
+import dbConnect from "../config/database";
 import { UserRequest } from "../middlewares/authenticate";
 import { Shift, ShiftType, ShiftStatus, ShiftEndType } from "../models/shift";
 import { User, UserType } from "../models/user";
@@ -22,8 +22,8 @@ export const clockIn: RequestHandler = async (
     const userId = req.user?.id;
     if (!userId) throw new ErrorHandler("Unauthorized", 401);
 
-    const userRepo = getRepository(User);
-    const shiftRepo = getRepository(Shift);
+    const userRepo = dbConnect.getRepository(User);
+    const shiftRepo = dbConnect.getRepository(Shift);
 
     const user = await userRepo.findOne({ where: { id: userId } });
     if (!user) throw new ErrorHandler("User not found", 404);
@@ -110,8 +110,8 @@ export const clockOut = async (
   const userId = req.user?.id;
   if (!userId) return next(new ErrorHandler("Unauthorized", 401));
 
-  const userRepo = getRepository(User);
-  const shiftRepo = getRepository(Shift);
+  const userRepo = dbConnect.getRepository(User);
+  const shiftRepo = dbConnect.getRepository(Shift);
 
   try {
     const user = await userRepo.findOne({ where: { id: userId } });
@@ -204,7 +204,7 @@ export const startBreak: RequestHandler = async (
     const userId = req.user?.id;
     if (!userId) throw new ErrorHandler("Unauthorized", 401);
 
-    const shiftRepo = getRepository(Shift);
+    const shiftRepo = dbConnect.getRepository(Shift);
     const activeShift = await shiftRepo.findOne({
       where: {
         user: { id: userId },
@@ -249,7 +249,7 @@ export const endBreak: RequestHandler = async (
     const userId = req.user?.id;
     if (!userId) throw new ErrorHandler("Unauthorized", 401);
 
-    const shiftRepo = getRepository(Shift);
+    const shiftRepo = dbConnect.getRepository(Shift);
     const activeShift = await shiftRepo.findOne({
       where: {
         user: { id: userId },
@@ -298,7 +298,7 @@ export const getShiftMetrics: RequestHandler = async (
     if (!userId) throw new ErrorHandler("User ID required", 400);
 
     const { startDate, endDate } = req.query;
-    const shiftRepo = getRepository(Shift);
+    const shiftRepo = dbConnect.getRepository(Shift);
 
     const shifts = await shiftRepo.find({
       where: {
@@ -367,7 +367,7 @@ export const forceEndShift: RequestHandler = async (
       throw new ErrorHandler("Unauthorized", 401);
     }
 
-    const shiftRepo = getRepository(Shift);
+    const shiftRepo = dbConnect.getRepository(Shift);
     const shift = await shiftRepo.findOne({
       where: { id: shiftId },
       relations: ["user"],
@@ -390,7 +390,7 @@ export const forceEndShift: RequestHandler = async (
     );
 
     await shiftRepo.save(shift);
-    await getRepository(User).update(shift.user.id, { clockedIn: false });
+    await dbConnect.getRepository(User).update(shift.user.id, { clockedIn: false });
 
     io.emit("shiftUpdate", {
       userId: shift.user.id,
@@ -457,8 +457,8 @@ export const getCurrentShift: RequestHandler = async (
     console.log(req.user);
     if (!userId) throw new ErrorHandler("Unauthorized", 401);
 
-    const userRepo = getRepository(User);
-    const shiftRepo = getRepository(Shift);
+    const userRepo = dbConnect.getRepository(User);
+    const shiftRepo = dbConnect.getRepository(Shift);
 
     const user = await userRepo.findOne({ where: { id: userId } });
     if (!user) throw new ErrorHandler("User not found", 404);

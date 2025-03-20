@@ -1,6 +1,6 @@
 import { Trade, TradePlatform, TradeStatus } from "../models/trades";
 import { User, UserType } from "../models/user";
-import { getConnection, getRepository } from "typeorm";
+import dbConnect from "../config/database";
 import { createNotification } from "../controllers/notificationController";
 import { PriorityLevel } from "../models/notifications";
 import { NoonesService } from "../config/noones";
@@ -35,8 +35,8 @@ export const createActivityLog = async ({
   details?: Record<string, any>;
   isSystemGenerated?: boolean;
 }) => {
-  const activityLogRepository = getRepository(ActivityLog);
-  const userRepository = getRepository(User);
+  const activityLogRepository = dbConnect.getRepository(ActivityLog);
+  const userRepository = dbConnect.getRepository(User);
 
   let user;
   if (userId) {
@@ -58,7 +58,7 @@ export const createActivityLog = async ({
 };
 
 export const assignTradesToPayers = async (): Promise<void> => {
-  const queryRunner = getConnection().createQueryRunner();
+  const queryRunner = dbConnect.createQueryRunner();
   await queryRunner.connect();
   await queryRunner.startTransaction();
 
@@ -192,7 +192,7 @@ export const assignTradesToPayers = async (): Promise<void> => {
           trade.platform === TradePlatform.NOONES
             ? Platform.NOONES
             : Platform.PAXFUL;
-        const template = await getRepository(AutoMessageTemplate).findOne({
+        const template = await dbConnect.getRepository(AutoMessageTemplate).findOne({
           where: { type: TemplateType.WELCOME, platform, isActive: true },
           order: { displayOrder: "ASC" },
         });

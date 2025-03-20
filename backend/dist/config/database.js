@@ -21,13 +21,17 @@ const messageTemplates_1 = require("../models/messageTemplates");
 const rates_1 = require("../models/rates");
 const accounts_1 = require("../models/accounts");
 dotenv_1.default.config();
+const db_name = process.env.DB_NAME;
+const username = process.env.DB_USER;
+const password = process.env.DB_PASSWORD;
+const host = process.env.DB_HOST;
 const dbConnect = new typeorm_1.DataSource({
     type: "postgres",
-    host: "aws-0-eu-central-1.pooler.supabase.com",
+    host: `${host}`,
     port: 5432,
-    username: "postgres.bnnqdyndohfjjczvqtbx",
-    password: "password",
-    database: "postgres",
+    username: username,
+    password: password,
+    database: db_name,
     synchronize: false,
     logging: true,
     entities: [
