@@ -16,8 +16,6 @@ import {
   Tooltip,
   Badge,
   Avatar,
-  Menu,
-  MenuItem,
   Tab,
   Tabs,
 } from "@mui/material";
@@ -153,7 +151,7 @@ const CustomerSupport = () => {
     const fetch = async () => {
       const esclatedData = await getAllEscalatedTrades();
       const completedData = await getCompletedTrades();
-      if (completedData.success) {
+      if (completedData?.success) {
         setCompletedTrades(completedData.data.trades);
       }
       if (esclatedData?.success) {

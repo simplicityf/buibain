@@ -15,19 +15,22 @@ const router: any = Router();
 
 router.use(authenticate);
 
-// Route to escalate a trade
+// Route to escalate a trade (IDs from params instead of body)
 router.post(
-  "/escalate",
+  "/escalate/:tradeId/:escalatedById/:assignedPayerId",
   [
-    body("tradeId").notEmpty().withMessage("Trade ID is required."),
-    body("platform").notEmpty().withMessage("Platform is required."),
+    // Only complaint is required in the request body now.
     body("complaint")
       .isString()
       .notEmpty()
       .withMessage("Complaint is required."),
-    body("amount").isNumeric().withMessage("Amount must be a number."),
-    body("assignedPayerId").isUUID().withMessage("Invalid payer ID."),
-    body("escalatedById").isUUID().withMessage("Invalid escalatedBy ID."),
+    param("tradeId").isUUID().withMessage("Invalid trade ID."),
+    param("escalatedById")
+      .isUUID()
+      .withMessage("Invalid escalatedBy ID."),
+    param("assignedPayerId")
+      .isUUID()
+      .withMessage("Invalid assignedPayer ID."),
   ],
   validateRequest,
   escalateTrade

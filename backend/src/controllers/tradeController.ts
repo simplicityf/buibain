@@ -86,6 +86,500 @@ async function initializePlatformServices(): Promise<PlatformServices> {
   return services;
 }
 
+/**
+ * Get real rates for a given platform.
+ * For both Paxful and Noones, if the stored rate is falsy, fetch a live rate from the platform.
+ * An optional serviceInstance is passed for Noones.
+ */
+// Helper to compute live rates (already provided)
+async function getRealRatesForPlatform(
+  platform: string,
+  serviceInstance?: NoonesService | PaxfulService
+): Promise<{
+  btc_usdt: number;
+  btc_ngn: number;
+  usdt_ngn: number;
+}> {
+  const ratesRepository = dbConnect.getRepository(Rates);
+  const ratesAll = await ratesRepository.find();
+  if (ratesAll.length === 0) {
+    throw new Error("Rates not set");
+  }
+  const rates = ratesAll[0];
+
+  if (platform === "noones") {
+    // Use DB rate if available; otherwise get live rate from Noones.
+    const liveRate = rates.noonesRate
+      ? rates.noonesRate
+      : serviceInstance
+        ? await (serviceInstance as NoonesService).getBitcoinPrice()
+        : undefined;
+    if (liveRate === undefined) {
+      throw new Error("Noones live rate is undefined");
+    }
+    console.log("Noones Rates:", liveRate, rates.sellingPrice, rates.usdtNgnRate);
+    return {
+      btc_usdt: liveRate, // Noones BTC/USDT
+      btc_ngn: Number(rates.sellingPrice), // Common BTC/NGN benchmark
+      usdt_ngn: Number(rates.usdtNgnRate), // USDT/NGN rate
+    };
+  } else if (platform === "paxful") {
+    // Use DB rate if available; otherwise get live rate from Paxful.
+    const liveRate = rates.paxfulRate
+      ? rates.paxfulRate
+      : await paxfulService.getBitcoinPrice();
+    console.log("Paxful Rates:", liveRate, rates.sellingPrice, rates.usdtNgnRate);
+    return {
+      btc_usdt: liveRate,
+      btc_ngn: Number(rates.sellingPrice),
+      usdt_ngn: Number(rates.usdtNgnRate),
+    };
+  }
+  throw new Error("Unsupported platform");
+}
+
+/**
+ * Controller to update existing offers.
+ * This endpoint iterates over offers that already exist (identified by offer_hash)
+ * and sends a request to the update endpoint.
+ */
+export const updateOffers = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    // Initialize services and fetch existing offers
+    const services = await initializePlatformServices();
+    const noonesOffers = await fetchAllOffers(services.noones);
+    const paxfulOffers = await fetchAllOffers(services.paxful);
+    const allOffers = [...noonesOffers, ...paxfulOffers];
+
+    // Now filter offers that already have an offer_hash and are either USDT or BTC offers.
+    const offersToUpdate = allOffers.filter(
+      (offer) =>
+        offer.offer_hash &&
+        (offer.crypto_currency_code === "USDT" || offer.crypto_currency_code === "BTC")
+    );
+
+    if (offersToUpdate.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "No existing USDT or BTC offers found to update",
+        data: [],
+      });
+    }
+
+    const updateResults = await Promise.all(
+      offersToUpdate.map(async (offer) => {
+        try {
+          let serviceInstance: NoonesService | PaxfulService | undefined;
+          let platformRates: {
+            btc_usdt: number;
+            btc_ngn: number;
+            usdt_ngn: number;
+          };
+          let computedMargin: number;
+
+          if (offer.platform === "noones") {
+            serviceInstance = services.noones.find((s) => s.accountId === offer.accountId);
+            if (!serviceInstance) throw new Error("Noones account service not found");
+            platformRates = await getRealRatesForPlatform("noones", serviceInstance);
+          } else if (offer.platform === "paxful") {
+            serviceInstance = services.paxful.find((s) => s.accountId === offer.accountId);
+            if (!serviceInstance) throw new Error("Paxful account service not found");
+            platformRates = await getRealRatesForPlatform("paxful");
+          } else {
+            throw new Error("Unsupported platform");
+          }
+
+          const { btc_usdt, btc_ngn, usdt_ngn } = platformRates;
+          if (!btc_usdt || !btc_ngn || !usdt_ngn || btc_ngn === 0) {
+            throw new Error(
+              `Invalid rates: btc_usdt=${btc_usdt}, btc_ngn=${btc_ngn}, usdt_ngn=${usdt_ngn}`
+            );
+          }
+
+          // Compute margin based on the crypto currency of the offer
+          if (offer.crypto_currency_code === "USDT") {
+            // Existing formula for USDT offers:
+            computedMargin = ((btc_usdt * usdt_ngn / btc_ngn) - 1) * 100;
+          } else if (offer.crypto_currency_code === "BTC") {
+            // For BTC offers, we compute the margin using an inverse calculation.
+            // (Adjust the formula as needed to suit your requirements.)
+            computedMargin = ((btc_ngn / (btc_usdt * usdt_ngn)) - 1) * 100;
+          } else {
+            throw new Error(`Unsupported crypto currency: ${offer.crypto_currency_code}`);
+          }
+
+          // Validate and format margin
+          if (isNaN(computedMargin) || computedMargin === null || computedMargin === undefined) {
+            throw new Error(`Invalid computed margin: ${computedMargin}`);
+          }
+
+          console.log(`[${offer.platform}] Raw computed margin for ${offer.crypto_currency_code}:`, computedMargin);
+
+          // Format margin (if Paxful expects a percentage like -3.00 instead of -300, adjust accordingly)
+          computedMargin = parseFloat(computedMargin.toFixed(2));
+          const marginNumber = Number(computedMargin);
+
+          if (marginNumber < -99.99 || marginNumber > 99.99) {
+            throw new Error(`Margin out of allowed range: ${marginNumber}`);
+          }
+          
+          console.log(`[${offer.platform}] Updating ${offer.crypto_currency_code} offer with margin:`, marginNumber);
+
+          let updateResult: any;
+          if (offer.platform === "noones") {
+            updateResult = await (serviceInstance as NoonesService).updateOffer(
+              offer.offer_hash,
+              marginNumber
+            );
+            console.log(`[${offer.platform}] Updated offer:`, updateResult);
+          } else if (offer.platform === "paxful") {
+            updateResult = await (serviceInstance as PaxfulService).updateOffer(
+              offer.offer_hash,
+              marginNumber
+            );
+            console.log(`[${offer.platform}] Updated offer:`, updateResult);
+          }
+
+          return {
+            id: offer.id,
+            platform: offer.platform,
+            crypto_currency: offer.crypto_currency_code,
+            success: true,
+            margin: marginNumber,
+            offer: updateResult,
+          };
+        } catch (error: any) {
+          return {
+            id: offer.id,
+            platform: offer.platform,
+            crypto_currency: offer.crypto_currency_code,
+            success: false,
+            error: error.message,
+          };
+        }
+      })
+    );
+
+    return res.status(200).json({
+      success: updateResults.every((result) => result.success === true),
+      message: "Offer update process completed",
+      data: updateResults,
+    });
+  } catch (error) {
+    console.error("Error in updateOffers:", error);
+    return next(error);
+  }
+};
+
+/**
+ * Fetch all active offers from a list of services.
+ */
+async function fetchAllOffers(
+  services: NoonesService[] | PaxfulService[]
+): Promise<any[]> {
+  const allOffers: any[] = [];
+
+  for (const service of services) {
+    try {
+      let offers: any[] = [];
+
+      if (service instanceof NoonesService) {
+        offers = await service.listActiveOffers();
+        // Log raw response from Noones to help diagnose empty responses.
+        console.log("Noones raw offers:", offers);
+        offers = offers.map((offer) => ({
+          ...offer,
+          margin:
+            offer.margin !== undefined ? offer.margin : offer.offerMargin,
+          platform: "noones",
+          accountId: service.accountId,
+        }));
+      } else if (service instanceof PaxfulService) {
+        offers = await service.listOffers({ status: "active" });
+        offers = offers.map((offer) => ({
+          ...offer,
+          margin: offer.margin,
+          platform: "paxful",
+          accountId: service.accountId,
+        }));
+      }
+      allOffers.push(...offers);
+    } catch (error) {
+      console.error(
+        `Error fetching offers for service ${service.label}:`,
+        error
+      );
+    }
+  }
+
+  return allOffers;
+}
+
+export const turnOffAllOffers = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const services = await initializePlatformServices();
+
+    for (const service of [...services.paxful, ...services.noones]) {
+      await service.turnOffAllOffers();
+    }
+    return res.status(200).json({
+      success: true,
+      message: `Turned off offers on all platforms`,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const turnOnAllOffers = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const services = await initializePlatformServices();
+
+    for (const service of [...services.noones, ...services.paxful]) {
+      await service.turnOnAllOffers();
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Turned on offers on all platforms`,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const getOffersMargin = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const services = await initializePlatformServices();
+
+    // Fetch offers from both platforms
+    const noonesOffers = await fetchAllOffers(services.noones);
+    const paxfulOffers = await fetchAllOffers(services.paxful);
+    const allOffers = [...noonesOffers, ...paxfulOffers];
+
+    // Filter offers to include only USDT and BTC
+    const filteredOffers = allOffers.filter(
+      (offer) =>
+        offer.crypto_currency_code === "USDT" ||
+        offer.crypto_currency_code === "BTC"
+    );
+
+    // Group offers by platform then by crypto currency
+    // For each platform, we only want one margin offer per crypto currency type.
+    const grouped: Record<
+      string,
+      Record<string, { id: string; platform: string; crypto_currency: string; margin: number }>
+    > = {};
+
+    filteredOffers.forEach((offer) => {
+      const { platform, crypto_currency_code } = offer;
+      if (!grouped[platform]) {
+        grouped[platform] = {};
+      }
+      // Only add one entry for each crypto currency type if it hasn't been added yet.
+      if (!grouped[platform][crypto_currency_code]) {
+        grouped[platform][crypto_currency_code] = {
+          id: offer.id,
+          platform: platform,
+          crypto_currency: crypto_currency_code,
+          margin: offer.margin,
+        };
+      }
+    });
+
+    // Format response as an object with keys for each platform, each containing an array of one margin per crypto currency.
+    const responseData = [
+      ...Object.values(grouped.noones || {}),
+      ...Object.values(grouped.paxful || {}),
+    ];    
+
+    return res.status(200).json({
+      success: true,
+      message: "Margin data fetched successfully",
+      data: responseData,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * GET Currency Rates
+ */
+export const getCurrencyRates = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const services = await initializePlatformServices();
+
+    const rates: {
+      noonesRate?: number;
+      binanceRate?: any;
+      paxfulRate?: number;
+    } = {};
+
+    // Get Noones rate
+    if (services.noones.length > 0) {
+      try {
+        const rate = await services.noones[0].getBitcoinPrice();
+        rates.noonesRate = rate;
+        console.log("Noones rate: ", rates.noonesRate);
+      } catch (error) {
+        console.error("Error fetching Noones rate:", error);
+      }
+    }
+
+    if (services.binance.length > 0) {
+      try {
+        const { btcUsdt } = await services.binance[0].fetchAllRates();
+        rates.binanceRate = btcUsdt.price;
+        console.log("Binance rate: ", rates.binanceRate);
+      } catch (error) {
+        console.error("Error fetching Binance rate:", error);
+      }
+    }
+
+    const paxfulRate = await paxfulService.getBitcoinPrice();
+    rates.paxfulRate = paxfulRate;
+    console.log("Paxful rate: ", rates.paxfulRate);
+    if (Object.keys(rates).length === 0) {
+      return next(new ErrorHandler("Failed to fetch rates from any platform", 500));
+    }
+
+    return res.status(200).json({ data: { ...rates }, success: true });
+  } catch (error: any) {
+    console.log(error.message);
+    return next(error);
+  }
+};
+
+/**
+ * Round-robin assignment: Distribute live (unassigned) trades among available payers.
+ */
+// export const assignLiveTrades = async (
+//   req: Request,
+//   res: Response,
+//   next: NextFunction
+// ) => {
+//   try {
+//     // If dummy mode is enabled via query parameter or env variable, use dummy data.
+//     const useDummy =
+//       req.query.useDummy === "true" ||
+//       process.env.USE_DUMMY_LIVE_TRADES === "true";
+//     const liveTrades = useDummy ? getDummyLiveTrades() : await aggregateLiveTrades();
+
+//     if (!liveTrades || liveTrades.length === 0) {
+//       return res.status(200).json({
+//         success: true,
+//         message: "No unassigned live trades found.",
+//       });
+//     }
+
+//     // Get available payers (users with role PAYER and clockedIn true).
+//     const availablePayers = await getAvailablePayers();
+//     if (availablePayers.length === 0) {
+//       return next(new ErrorHandler("No available payers found", 400));
+//     }
+
+//     // Retrieve platform services for further processing.
+//     const services = await initializePlatformServices();
+//     const tradeRepository = dbConnect.getRepository(Trade);
+//     const assignedTrades: any[] = [];
+//     let payerIndex = 0;
+
+//     // Iterate over each live trade.
+//     for (const tradeData of liveTrades) {
+//       // Round-robin assignment.
+//       const payer = availablePayers[payerIndex];
+//       payerIndex = (payerIndex + 1) % availablePayers.length;
+
+//       // Check if the trade is already assigned.
+//       const existingTrade = await tradeRepository.findOne({
+//         where: { tradeHash: tradeData.trade_hash },
+//       });
+//       if (existingTrade) continue;
+
+//       // For platforms that support fetching additional vendor details.
+//       let tradeDetails = null;
+//       let tradeChat = null;
+//       if (tradeData.platform === "noones" || tradeData.platform === "paxful") {
+//         type PlatformKey = "noones" | "paxful";
+//         const platformKey = tradeData.platform as PlatformKey;
+//         const platformService = services[platformKey]?.find((s: any) => s.accountId === tradeData.accountId);
+//         if (platformService) {
+//           tradeDetails = await platformService.getTradeDetails(tradeData.trade_hash);
+//           if (platformService.getTradeChat) {
+//             tradeChat = await platformService.getTradeChat(tradeData.trade_hash);
+//           }
+//         }
+//       }
+
+//       // Create a new Trade record with default values for required fields.
+//       let trade = tradeRepository.create({
+//         tradeHash: tradeData.trade_hash,
+//         platform: tradeData.platform,
+//         amount: tradeData.amount,
+//         status: TradeStatus.ASSIGNED,
+//         tradeStatus: "Assigned", // default value
+//         assignedPayerId: payer.id,
+//         assignedAt: new Date(),
+//         accountId: tradeData.accountId,
+//         // Set defaults for numeric fields.
+//         cryptoAmountRequested: 0,
+//         cryptoAmountTotal: 0,
+//         feeCryptoAmount: 0,
+//         feePercentage: 0,
+//         // Set defaults for required string fields.
+//         sourceId: "dummySource",
+//         responderUsername: "dummyResponder",
+//         ownerUsername: "dummyOwner",
+//         paymentMethod: "dummyMethod",
+//         fiatCurrency: "NGN",
+//         cryptoCurrencyCode: "BTC",
+//       });
+//       trade = await tradeRepository.save(trade);
+
+//       // Push an object containing the saved trade, fetched details, chat, and the assigned payer's info.
+//       assignedTrades.push({
+//         trade,
+//         tradeDetails,
+//         tradeChat,
+//         payer: {
+//           id: payer.id,
+//           fullName: payer.fullName,
+//           email: payer.email, // if needed
+//         },
+//       });
+//     }
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "Live trades assigned to available payers using round-robin strategy.",
+//       data: assignedTrades,
+//     });
+//   } catch (error) {
+//     return next(error);
+//   }
+// };
+
 // Helper function: aggregateLiveTrades
 const aggregateLiveTrades = async (): Promise<any[]> => {
   const services = await initializePlatformServices();
@@ -249,7 +743,6 @@ export const assignLiveTrades = async (
   }
 };
 
-
 /**
  * Fetch trade details (including chat) based on stored trade data.
  * Instead of manually inputting tradeHash, platform, and accountId,
@@ -302,56 +795,6 @@ export const fetchTradeDetailsById = async (
   }
 };
 
-/**
- * GET Currency Rates
- */
-export const getCurrencyRates = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const services = await initializePlatformServices();
-
-    const rates: {
-      noonesRate?: number;
-      binanceRate?: any;
-      paxfulRate?: number;
-    } = {};
-
-    // Get Noones rate
-    if (services.noones.length > 0) {
-      try {
-        const rate = await services.noones[0].getBitcoinPrice();
-        rates.noonesRate = rate;
-      } catch (error) {
-        console.error("Error fetching Noones rate:", error);
-      }
-    }
-
-    if (services.binance.length > 0) {
-      try {
-        const { btcUsdt } = await services.binance[0].fetchAllRates();
-        rates.binanceRate = btcUsdt.price;
-        console.log("Binance rate: ", rates.binanceRate);
-      } catch (error) {
-        console.error("Error fetching Binance rate:", error);
-      }
-    }
-
-    const paxfulRate = await paxfulService.getBitcoinPrice();
-    rates.paxfulRate = paxfulRate;
-    console.log("Paxful rate: ", rates.paxfulRate);
-    if (Object.keys(rates).length === 0) {
-      return next(new ErrorHandler("Failed to fetch rates from any platform", 500));
-    }
-
-    return res.status(200).json({ data: { ...rates }, success: true });
-  } catch (error: any) {
-    console.log(error.message);
-    return next(error);
-  }
-};
 
 /**
  * Get trade details from any platform.
@@ -364,7 +807,8 @@ export const getTradeDetails = async (
   next: NextFunction
 ) => {
   try {
-    const { tradeHash, platform, accountId } = req.body;
+    const { platform, tradeHash, accountId } = req.params;
+    console.log("Received Params:", { platform, tradeHash, accountId });
 
     if (!platform || !tradeHash || !accountId) {
       return next(
@@ -382,6 +826,7 @@ export const getTradeDetails = async (
         if (!service) {
           return next(new ErrorHandler("Account not found", 404));
         }
+
         trade = await service.getTradeDetails(tradeHash);
         tradeChat = await service.getTradeChat(tradeHash);
         break;
@@ -608,12 +1053,23 @@ export const setOrUpdateRates = async (
   try {
     const { noonesRate, paxfulRate, sellingPrice, usdtNgnRate, markup2 } = req.body;
 
-    if (!noonesRate || !paxfulRate || !sellingPrice || !usdtNgnRate || !markup2) {
-      return next(new ErrorHandler("All rates (noonesRate, paxfulRate, sellingPrice, usdtNgnRate, markup2) are required", 400));
+    if (
+      noonesRate === undefined ||
+      paxfulRate === undefined ||
+      sellingPrice === undefined ||
+      usdtNgnRate === undefined ||
+      markup2 === undefined
+    ) {
+      return next(
+        new ErrorHandler(
+          "All rates (noonesRate, paxfulRate, sellingPrice, usdtNgnRate, markup2) are required",
+          400
+        )
+      );
     }
 
     const ratesRepository = dbConnect.getRepository(Rates);
-    let ratesAll = await ratesRepository.find();
+    const ratesAll = await ratesRepository.find();
     let rates = ratesAll.length > 0 ? ratesAll[0] : null;
 
     if (!rates) {
@@ -626,7 +1082,7 @@ export const setOrUpdateRates = async (
       await ratesRepository.save(rates);
 
       return res.status(201).json({
-        success: true,
+        success: true,  // ✅ Added success field
         message: "Rates set successfully",
         data: rates,
       });
@@ -639,7 +1095,7 @@ export const setOrUpdateRates = async (
       await ratesRepository.save(rates);
 
       return res.status(200).json({
-        success: true,
+        success: true,  // ✅ Added success field
         message: "Rates updated successfully",
         data: rates,
       });
@@ -935,195 +1391,6 @@ export const getCompletedPaidTrades = async (
     return next(new ErrorHandler(`Error retrieving completed trades: ${error.message}`, 500));
   }
 };
-
-
-export const updateOffersMargin = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const { paxfulMargin, noonesMargin } = req.body;
-
-    if (typeof paxfulMargin !== "number" || typeof noonesMargin !== "number") {
-      return next(new ErrorHandler("Margin values must be valid numbers", 400));
-    }
-
-    const services = await initializePlatformServices();
-
-    // Fetch all offers from both platforms
-    const noonesOffers = await fetchAllOffers(services.noones);
-    const paxfulOffers = await fetchAllOffers(services.paxful);
-    const allOffers = [...noonesOffers, ...paxfulOffers];
-
-    console.log("Fetched offers:", allOffers);
-
-    // Filter offers to process only BTC/USD offers
-    const btcUsdOffers = allOffers.filter((offer) => {
-      return offer.crypto_currency_code === "BTC";
-    });
-
-    if (btcUsdOffers.length === 0) {
-      return res.status(200).json({
-        success: true,
-        message: "No BTC/USD offers found to update",
-        data: [],
-      });
-    }
-
-    // Process each offer: Copy details & Create USDT Offer
-    const updateResults = await Promise.all(
-      btcUsdOffers.map(async (offer) => {
-        try {
-          let margin: number;
-          let serviceInstance: NoonesService | PaxfulService | undefined;
-
-          if (offer.platform === "noones") {
-            margin = noonesMargin;
-            serviceInstance = services.noones.find(
-              (s) => s.accountId === offer.accountId
-            );
-          } else if (offer.platform === "paxful") {
-            margin = paxfulMargin;
-            serviceInstance = services.paxful.find(
-              (s) => s.accountId === offer.accountId
-            );
-          } else {
-            throw new Error("Unsupported platform");
-          }
-
-          if (!serviceInstance) {
-            throw new Error(`${offer.platform} account service not found`);
-          }
-
-          // Create a new USDT offer based on the copied details
-          const newOffer = await serviceInstance.createOffer({
-            margin: margin,
-            currency: offer.fiat_currency_code,
-            offer_cap: {
-              range_max: offer.max_amount,
-              range_min: offer.min_amount,
-            },
-            offer_terms: offer.offer_terms,
-            payment_method: offer.payment_method,
-            payment_window: offer.payment_window,
-            payment_country: offer.payment_country,
-            offer_type_field: offer.offer_type, // "buy" or "sell"
-            crypto_currency: "usdt", // Set to USDT
-            is_fixed_price: offer.is_fixed_price || false,
-            predefined_amount: offer.predefined_amount || undefined,
-          });
-
-          return {
-            id: offer.id,
-            platform: offer.platform,
-            success: true,
-          };
-        } catch (error: any) {
-          return {
-            id: offer.id,
-            platform: offer.platform,
-            success: false,
-            error: error.message,
-          };
-        }
-      })
-    );
-
-    return res.status(200).json({
-      success: true,
-      message: "Margin update and USDT offer creation completed",
-      data: updateResults,
-    });
-  } catch (error) {
-    return next(error);
-  }
-};
-
-/**
- * Fetch all active offers from a list of services.
- */
-async function fetchAllOffers(
-  services: NoonesService[] | PaxfulService[]
-): Promise<any[]> {
-  const allOffers: any[] = [];
-
-  for (const service of services) {
-    try {
-      let offers: any[] = [];
-
-      if (service instanceof NoonesService) {
-        offers = await service.listActiveOffers();
-        offers = offers.map((offer) => ({
-          ...offer,
-          platform: "noones",
-          accountId: service.accountId,
-        }));
-      } else if (service instanceof PaxfulService) {
-        offers = await service.listOffers({ status: "active" });
-        offers = offers.map((offer) => ({
-          ...offer,
-          platform: "paxful",
-          accountId: service.accountId,
-        }));
-      }
-
-      allOffers.push(...offers);
-    } catch (error) {
-      console.error(
-        `Error fetching offers for service ${service.label}:`,
-        error
-      );
-    }
-  }
-
-  return allOffers;
-}
-
-export const turnOffAllOffers = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const services = await initializePlatformServices();
-    let count = 0;
-
-    for (const service of [...services.paxful, ...services.noones]) {
-      await service.turnOffAllOffers();
-    }
-    return res.status(200).json({
-      success: true,
-      message: `Turned off  offers on all platforms`,
-    });
-  } catch (error) {
-    return next(error);
-  }
-};
-
-export const turnOnAllOffers = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const services = await initializePlatformServices();
-    let count = 0;
-
-    for (const service of [...services.noones, ...services.paxful]) {
-      await service.turnOnAllOffers();
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: `Turned on offers on all platforms`,
-    });
-  } catch (error) {
-    return next(error);
-  }
-};
-
-// Controller for  re assigning a trade
 
 export const reassignTrade = async (
   req: Request,

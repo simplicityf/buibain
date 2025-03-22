@@ -7,9 +7,8 @@ import React, {
 } from "react";
 import { INotification, ResInterface, User } from "../lib/interface";
 import axios from "axios";
-import io from "socket.io-client";
 
-import { BASE_URL, SOCKET_BASE_URL } from "../lib/constants";
+import { BASE_URL } from "../lib/constants";
 import { handleApiError } from "../api/user";
 
 // Define the shape of the context

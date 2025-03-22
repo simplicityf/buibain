@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Box,
   Paper,
@@ -11,7 +11,6 @@ import {
   TableRow,
   Button,
   TextField,
-  IconButton,
   Chip,
   Tooltip,
   Container,
@@ -20,8 +19,8 @@ import {
   Select,
   MenuItem,
   Card,
-  Grid,
   styled,
+  CircularProgress,
 } from "@mui/material";
 import {
   Search,
@@ -29,14 +28,11 @@ import {
   Download,
   Refresh,
   ArrowUpward,
-  ArrowDownward,
-  AccessTime,
-  Speed,
-  AccountBalanceWallet,
-  CurrencyExchange,
+  ArrowDownward
 } from "@mui/icons-material";
 import { useUserContext } from "../../Components/ContextProvider";
 import ClockedAlt from "../../Components/ClockedAlt";
+import { getCompletedTrades } from "../../api/trade"; 
 
 // Styled Components
 const StyledTableCell = styled(TableCell)(({ theme }) => ({
@@ -53,174 +49,77 @@ const HeaderCard = styled(Card)(({ theme }) => ({
   borderRadius: theme.shape.borderRadius,
 }));
 
-// Mock data for transactions
-const mockTransactions = [
-  {
-    id: 1,
-    payer: "John Doe",
-    payingBank: "GTBank",
-    platformAccount: "Paxful_123",
-    tradeHash: "0x1234...5678",
-    sellerUsername: "BTC_Master",
-    btcBought: "0.05432",
-    ngnPaid: "2,500,000",
-    openedAt: "2024-12-30 14:23:45",
-    paidAt: "2024-12-30 14:25:12",
-    payerSpeed: 87,
-    ngnSellingPrice: "42,000,000",
-    ngnCostPrice: "41,500,000",
-    usdCost: "1,450",
-  },
-  {
-    id: 1,
-    payer: "John Doe",
-    payingBank: "GTBank",
-    platformAccount: "Paxful_123",
-    tradeHash: "0x1234...5678",
-    sellerUsername: "BTC_Master",
-    btcBought: "0.05432",
-    ngnPaid: "2,500,000",
-    openedAt: "2024-12-30 14:23:45",
-    paidAt: "2024-12-30 14:25:12",
-    payerSpeed: 87,
-    ngnSellingPrice: "42,000,000",
-    ngnCostPrice: "41,500,000",
-    usdCost: "1,450",
-  },
-  {
-    id: 1,
-    payer: "John Doe",
-    payingBank: "GTBank",
-    platformAccount: "Paxful_123",
-    tradeHash: "0x1234...5678",
-    sellerUsername: "BTC_Master",
-    btcBought: "0.05432",
-    ngnPaid: "2,500,000",
-    openedAt: "2024-12-30 14:23:45",
-    paidAt: "2024-12-30 14:25:12",
-    payerSpeed: 87,
-    ngnSellingPrice: "42,000,000",
-    ngnCostPrice: "41,500,000",
-    usdCost: "1,450",
-  },
-];
-
 const TransactionHistory = () => {
+  const { user } = useUserContext();
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [pagination, setPagination] = useState({
+    total: 0,
+    totalPages: 0,
+    currentPage: 1,
+    itemsPerPage: 10,
+  });
+  const [loading, setLoading] = useState(true);
   const [sortConfig, setSortConfig] = useState({ field: "", direction: "asc" });
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedPayer, setSelectedPayer] = useState("");
   const [dateRange, setDateRange] = useState("");
-  const { user } = useUserContext();
 
-  const summaryStats = [
-    {
-      title: "Total Transactions",
-      value: "1,234",
-      icon: <CurrencyExchange />,
-      trend: "+12.5%",
-    },
-    {
-      title: "Average Speed",
-      value: "92s",
-      icon: <Speed />,
-      trend: "-5.3%",
-    },
-    {
-      title: "Total BTC Volume",
-      value: "12.45 BTC",
-      icon: <AccountBalanceWallet />,
-      trend: "+8.7%",
-    },
-    {
-      title: "Average Response",
-      value: "1m 45s",
-      icon: <AccessTime />,
-      trend: "-2.1%",
-    },
-  ];
-
-  const handleSort = (field: any) => {
-    setSortConfig((prevConfig) => ({
-      field,
-      direction:
-        prevConfig.field === field && prevConfig.direction === "asc"
-          ? "desc"
-          : "asc",
-    }));
+  // Fetch trades from backend
+  const fetchTrades = async (page = 1, limit = 10) => {
+    try {
+      setLoading(true);
+      const res = await getCompletedTrades(page, limit);
+      if (res?.success && res.data) {
+        setTransactions(res.data.trades);
+        setPagination(res.data.pagination);
+      }
+    } catch (error) {
+      console.error("Error fetching trades:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  if (!user.clockedIn && user.userType !== "admin") {
+  // Initial fetch
+  useEffect(() => {
+    fetchTrades();
+  }, []);
+
+  const handleSort = (field: string) => {
+    setSortConfig((prevConfig) => ({
+      field,
+      direction: prevConfig.field === field && prevConfig.direction === "asc" ? "desc" : "asc",
+    }));
+    // Optionally: Implement client-side sorting here.
+  };
+
+  if (!user?.clockedIn && user?.userType !== "admin") {
     return <ClockedAlt />;
   }
+
+  if (loading) {
+    return (
+      <Box sx={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center" }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
   return (
     <Box sx={{ minHeight: "100vh" }}>
       <Container>
         {/* Header Section */}
         <Box sx={{ mb: 4 }}>
-          <Typography
-            variant="h4"
-            sx={{ fontWeight: 700, color: "text.primary", mb: 1 }}
-          >
+          <Typography variant="h4" sx={{ fontWeight: 700, color: "text.primary", mb: 1 }}>
             Transaction History
           </Typography>
           <Typography variant="body1" sx={{ color: "text.secondary" }}>
-            Complete overview of all trading transactions and performance
-            metrics
+            Complete overview of all trading transactions and performance metrics
           </Typography>
         </Box>
 
-        {/* Summary Stats Cards */}
-        <Grid container spacing={3} sx={{ mb: 4 }}>
-          {summaryStats.map((stat, index) => (
-            <Grid item xs={12} sm={6} md={3} key={index}>
-              <Card
-                sx={{
-                  p: 3,
-                  height: "100%",
-                  transition: "transform 0.2s",
-                  "&:hover": {
-                    transform: "translateY(-4px)",
-                    boxShadow: 2,
-                  },
-                }}
-              >
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    mb: 2,
-                  }}
-                >
-                  <Box
-                    sx={{
-                      p: 1,
-                      borderRadius: 1,
-                      bgcolor: "primary.lighter",
-                      display: "flex",
-                      alignItems: "center",
-                    }}
-                  >
-                    {React.cloneElement(stat.icon, {
-                      sx: { color: "primary.main" },
-                    })}
-                  </Box>
-                  <Chip
-                    label={stat.trend}
-                    size="small"
-                    color={stat.trend.startsWith("+") ? "success" : "error"}
-                    sx={{ height: 24 }}
-                  />
-                </Box>
-                <Typography variant="h5" sx={{ fontWeight: 600, mb: 1 }}>
-                  {stat.value}
-                </Typography>
-                <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                  {stat.title}
-                </Typography>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
+        {/* Summary Stats Cards (if needed, update as per BE data) */}
+        {/* ... Your summary stats section remains here ... */}
 
         {/* Filters and Actions */}
         <HeaderCard>
@@ -241,19 +140,13 @@ const TransactionHistory = () => {
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 InputProps={{
-                  startAdornment: (
-                    <Search sx={{ color: "text.secondary", mr: 1 }} />
-                  ),
+                  startAdornment: <Search sx={{ color: "text.secondary", mr: 1 }} />,
                 }}
                 sx={{ minWidth: 300 }}
               />
               <FormControl size="small" sx={{ minWidth: 200 }}>
                 <InputLabel>Payer</InputLabel>
-                <Select
-                  value={selectedPayer}
-                  label="Payer"
-                  onChange={(e) => setSelectedPayer(e.target.value)}
-                >
+                <Select value={selectedPayer} label="Payer" onChange={(e) => setSelectedPayer(e.target.value)}>
                   <MenuItem value="">All Payers</MenuItem>
                   <MenuItem value="john">John Doe</MenuItem>
                   <MenuItem value="jane">Jane Smith</MenuItem>
@@ -261,11 +154,7 @@ const TransactionHistory = () => {
               </FormControl>
               <FormControl size="small" sx={{ minWidth: 200 }}>
                 <InputLabel>Date Range</InputLabel>
-                <Select
-                  value={dateRange}
-                  label="Date Range"
-                  onChange={(e) => setDateRange(e.target.value)}
-                >
+                <Select value={dateRange} label="Date Range" onChange={(e) => setDateRange(e.target.value)}>
                   <MenuItem value="today">Today</MenuItem>
                   <MenuItem value="week">This Week</MenuItem>
                   <MenuItem value="month">This Month</MenuItem>
@@ -304,6 +193,7 @@ const TransactionHistory = () => {
               <Button
                 variant="outlined"
                 startIcon={<Refresh />}
+                onClick={() => fetchTrades()}
                 sx={{
                   borderColor: "primary.main",
                   color: "primary.main",
@@ -345,39 +235,21 @@ const TransactionHistory = () => {
           }}
         >
           <Table stickyHeader sx={{ minWidth: 2000 }}>
-            {" "}
-            {/* Added minWidth for horizontal scroll */}
             <TableHead>
               <TableRow>
                 {[
                   { id: "sn", label: "S/N", width: 70 },
                   { id: "payer", label: "Payer", width: 150 },
                   { id: "payingBank", label: "Paying Bank", width: 150 },
-                  {
-                    id: "platformAccount",
-                    label: "Platform Account",
-                    width: 180,
-                  },
+                  { id: "platformAccount", label: "Platform Account", width: 180 },
                   { id: "tradeHash", label: "Trade Hash", width: 200 },
-                  {
-                    id: "sellerUsername",
-                    label: "Seller Username",
-                    width: 150,
-                  },
+                  { id: "sellerUsername", label: "Seller Username", width: 150 },
                   { id: "btcBought", label: "BTC Bought", width: 120 },
                   { id: "ngnPaid", label: "NGN Paid", width: 150 },
                   { id: "openedAt", label: "Opened At", width: 180 },
                   { id: "paidAt", label: "Paid At", width: 180 },
-                  {
-                    id: "payerSpeed",
-                    label: "Payer's Speed (secs)",
-                    width: 150,
-                  },
-                  {
-                    id: "ngnSellingPrice",
-                    label: "NGN Selling Price",
-                    width: 150,
-                  },
+                  { id: "payerSpeed", label: "Payer's Speed (secs)", width: 150 },
+                  { id: "ngnSellingPrice", label: "NGN Selling Price", width: 150 },
                   { id: "ngnCostPrice", label: "NGN Cost Price", width: 150 },
                   { id: "usdCost", label: "USD Cost", width: 120 },
                 ].map((column) => (
@@ -392,7 +264,7 @@ const TransactionHistory = () => {
                       position: "sticky",
                       top: 0,
                       zIndex: 1,
-                      py: 3, // Increased vertical padding
+                      py: 3,
                       "&:hover": {
                         backgroundColor: "action.hover",
                       },
@@ -406,12 +278,10 @@ const TransactionHistory = () => {
                         gap: 1,
                       }}
                     >
-                      <Typography
-                        variant="subtitle2"
-                        sx={{ fontWeight: 600, width: "max-content" }}
-                      >
+                      <Typography variant="subtitle2" sx={{ fontWeight: 600, width: "max-content" }}>
                         {column.label}
                       </Typography>
+                      {/* Optionally show sort indicator */}
                       {sortConfig.field === column.id && (
                         <Box sx={{ display: "flex", alignItems: "center" }}>
                           {sortConfig.direction === "asc" ? (
@@ -427,23 +297,19 @@ const TransactionHistory = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {mockTransactions.map((transaction) => (
+              {transactions.map((transaction, index) => (
                 <TableRow
-                  key={transaction.id}
+                  key={transaction.id + index}
                   hover
                   sx={{
                     "&:hover": { bgcolor: "action.hover" },
                     transition: "background-color 0.2s",
                   }}
                 >
-                  <TableCell sx={{ py: 2.5 }}>{transaction.id}</TableCell>
+                  <TableCell sx={{ py: 2.5 }}>{index + 1}</TableCell>
                   <TableCell sx={{ py: 2.5 }}>{transaction.payer}</TableCell>
-                  <TableCell sx={{ py: 2.5 }}>
-                    {transaction.payingBank}
-                  </TableCell>
-                  <TableCell sx={{ py: 2.5 }}>
-                    {transaction.platformAccount}
-                  </TableCell>
+                  <TableCell sx={{ py: 2.5 }}>{transaction.payingBank}</TableCell>
+                  <TableCell sx={{ py: 2.5 }}>{transaction.platformAccount}</TableCell>
                   <TableCell sx={{ py: 2.5 }}>
                     <Tooltip title={transaction.tradeHash}>
                       <Typography
@@ -458,49 +324,35 @@ const TransactionHistory = () => {
                       </Typography>
                     </Tooltip>
                   </TableCell>
+                  <TableCell sx={{ py: 2.5 }}>{transaction.sellerUsername}</TableCell>
+                  <TableCell sx={{ py: 2.5, fontFamily: "monospace" }}>{transaction.btcBought}</TableCell>
                   <TableCell sx={{ py: 2.5 }}>
-                    {transaction.sellerUsername}
-                  </TableCell>
-                  <TableCell sx={{ py: 2.5, fontFamily: "monospace" }}>
-                    {transaction.btcBought}
-                  </TableCell>
-                  <TableCell sx={{ py: 2.5 }}>
-                    <Typography sx={{ fontWeight: 500 }}>
-                      {transaction.ngnPaid}
-                    </Typography>
+                    <Typography sx={{ fontWeight: 500 }}>{transaction.ngnPaid}</Typography>
                   </TableCell>
                   <TableCell sx={{ py: 2.5 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      {transaction.openedAt}
-                    </Typography>
+                    <Typography variant="body2" color="text.secondary">{transaction.openedAt}</Typography>
                   </TableCell>
                   <TableCell sx={{ py: 2.5 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      {transaction.paidAt}
-                    </Typography>
+                    <Typography variant="body2" color="text.secondary">{transaction.paidAt}</Typography>
                   </TableCell>
                   <TableCell sx={{ py: 2.5 }}>
                     <Chip
                       label={`${transaction.payerSpeed}s`}
                       size="small"
-                      color={
-                        transaction.payerSpeed < 90 ? "success" : "warning"
-                      }
+                      color={transaction.payerSpeed < 90 ? "success" : "warning"}
                       sx={{ minWidth: 70 }}
                     />
                   </TableCell>
-                  <TableCell sx={{ py: 2.5 }}>
-                    {transaction.ngnSellingPrice}
-                  </TableCell>
-                  <TableCell sx={{ py: 2.5 }}>
-                    {transaction.ngnCostPrice}
-                  </TableCell>
+                  <TableCell sx={{ py: 2.5 }}>{transaction.ngnSellingPrice}</TableCell>
+                  <TableCell sx={{ py: 2.5 }}>{transaction.ngnCostPrice}</TableCell>
                   <TableCell sx={{ py: 2.5 }}>{transaction.usdCost}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </TableContainer>
+
+        {/* Pagination controls could be added here using pagination.totalPages and pagination.currentPage */}
       </Container>
     </Box>
   );

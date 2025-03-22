@@ -5,11 +5,9 @@ import {
   Paper,
   Typography,
   useTheme,
-  Divider,
   IconButton,
   Card,
   CardContent,
-  LinearProgress,
 } from "@mui/material";
 import {
   Timeline,

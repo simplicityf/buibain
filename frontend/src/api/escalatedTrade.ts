@@ -4,19 +4,18 @@ import toast from "react-hot-toast";
 import { ResInterface } from "../lib/interface";
 
 export const createEscalatedTrade = async (data: {
-  tradeHash: string;
   tradeId: string;
-  platform: string;
   complaint: string;
-  amount: number;
   assignedPayerId: string;
   escalatedById: string;
 }) => {
   try {
     toast.loading("Escalating Trade...", loadingStyles);
     const res: ResInterface = await api.post(
-      "/escalated-trades/escalate",
-      data
+      `/escalated-trades/escalate/${data.tradeId}/${data.escalatedById}/${data.assignedPayerId}`,
+      {
+        complaint: data.complaint,
+      }
     );
     toast.dismiss();
     toast.success(res.message, successStyles);
@@ -26,6 +25,7 @@ export const createEscalatedTrade = async (data: {
     handleApiError(error, "Failed to escalate the trade.");
   }
 };
+
 
 export const getAllEscalatedTrades = async (status?: string) => {
   try {

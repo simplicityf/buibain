@@ -8,6 +8,7 @@ import {
 
 @Entity("rates")
 export class Rates {
+  [x: string]: any;
   @PrimaryGeneratedColumn("uuid")
   id!: string;
 
@@ -31,4 +32,5 @@ export class Rates {
 
   @UpdateDateColumn({ type: "timestamp" })
   updatedAt!: Date;
+  noonesRate: any;
 }

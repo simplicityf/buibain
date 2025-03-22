@@ -53,6 +53,7 @@ export interface Attachment {
 }
 
 export interface Message {
+  timestamp(timestamp: any): unknown;
   id: string;
   chat: Chat;
   sender: User;

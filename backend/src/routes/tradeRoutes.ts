@@ -10,14 +10,15 @@ import {
   markTradeAsPaid,
   getDashboardStats,
   getCompletedPaidTrades,
-  updateOffersMargin,
+  updateOffers,
   turnOffAllOffers,
   turnOnAllOffers,
   reassignTrade,
   getLiveTrades,
   assignLiveTrades,
   getAllTrades,
-  getUnfinishedTrades
+  getUnfinishedTrades,
+  getOffersMargin
 } from "../controllers/tradeController";
 import { authenticate, roleAuth } from "../middlewares/authenticate";
 import { User, UserType } from "../models/user";
@@ -46,7 +47,7 @@ router.get("/live-trades", getLiveTrades);
 
 router.post("/assign-live-trade", assignLiveTrades);
 
-router.post("/payer/trade/info", getTradeDetails);
+router.get("/payer/trade/info/:platform/:tradeHash/:accountId", getTradeDetails);
 
 router.post("/mark-paid", markTradeAsPaid);
 
@@ -75,10 +76,16 @@ router.get(
   getWalletBalances
 );
 
-router.put(
+router.get(
+  "/offers",
+  roleAuth([UserType.ADMIN, UserType.RATER]),
+  getOffersMargin
+);
+
+router.post(
   "/offers/update",
   roleAuth([UserType.ADMIN, UserType.RATER]),
-  updateOffersMargin
+  updateOffers
 );
 
 router.get(

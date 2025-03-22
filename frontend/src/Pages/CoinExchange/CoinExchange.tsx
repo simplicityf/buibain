@@ -9,18 +9,13 @@ import {
   styled,
   Button,
   Chip,
-  Alert,
-  LinearProgress,
   Select,
   MenuItem,
   FormControl,
-  InputLabel,
-  AlertTitle,
+  InputLabel
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
-import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
-import WarningIcon from "@mui/icons-material/Warning";
 import {
   LineChart,
   Line,
@@ -30,11 +25,9 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import axios from "axios";
 import { api } from "../../api/user";
 import { ResInterface } from "../../lib/interface";
 import Loading from "../../Components/Loading";
-import { Copy } from "lucide-react";
 import { CopyAll } from "@mui/icons-material";
 
 // Styled Components

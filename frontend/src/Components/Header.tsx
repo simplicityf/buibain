@@ -33,7 +33,7 @@ const Header = () => {
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [isOnBreak, setIsOnBreak] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [currentShift, setCurrentShift] = useState(null);
+  const [currentShift, setCurrentShift] = useState<any>(null);
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
@@ -45,23 +45,35 @@ const Header = () => {
         headers: { "Content-Type": "application/json" },
         withCredentials: true,
       });
-
+  
       if (res.data.success && res.data.data) {
         const { shift, clockedIn, workDuration, breaks } = res.data.data;
         setCurrentShift(shift);
         setIsClockedIn(clockedIn);
         setElapsedTime(workDuration * 60 || 0);
-
+  
         if (breaks?.length > 0) {
           const lastBreak = breaks[breaks.length - 1];
           setIsOnBreak(!lastBreak.endTime);
+        } else {
+          setIsOnBreak(false);
         }
-      } else {
-        setError("Active Shift Not found");
+        setError(""); // Clear any previous error
       }
-    } catch (error) {
-      setError("Current Shift Not Found");
-      console.error("Shift fetch error:", error);
+    } catch (err) {
+      // Cast error to any to avoid TS error on accessing .response
+      const errorObj = err as any;
+      if (errorObj.response && errorObj.response.status === 404) {
+        // 404 means no active shift – clear the active state so that Clock In can be shown.
+        setCurrentShift(null);
+        setIsClockedIn(false);
+        setElapsedTime(0);
+        setIsOnBreak(false);
+        setError(""); 
+      } else {
+        setError("Current Shift Not Found");
+        console.error("Shift fetch error:", err);
+      }
     }
   };
 
@@ -70,14 +82,14 @@ const Header = () => {
   }, []);
 
   useEffect(() => {
-    let timer;
-    if (isClockedIn && !isOnBreak && currentShift) {
+    let timer: ReturnType<typeof setTimeout>;
+    if (isClockedIn && !isOnBreak) {
       timer = setInterval(() => {
         setElapsedTime((prev) => prev + 1);
       }, 1000);
     }
     return () => clearInterval(timer);
-  }, [isClockedIn, isOnBreak, currentShift]);
+  }, [isClockedIn, isOnBreak]);
 
   const handleClockInOut = async () => {
     try {
@@ -85,19 +97,21 @@ const Header = () => {
         const shiftData = await clockIn();
         if (shiftData) {
           await fetchCurrentShift();
-          setUser({ ...user, clockedIn: true });
+          // Update user state ensuring required properties (cast if needed)
+          setUser({ ...(user as any), clockedIn: true });
         }
       } else {
         const data = await clockOut();
         await fetchCurrentShift();
-        setUser({ ...user, clockedIn: false });
-        if (data.success) {
+        // Update user state ensuring required properties (cast if needed)
+        setUser({ ...(user as any), clockedIn: false });
+        if (data?.success) {
           setIsClockedIn(false);
           setIsOnBreak(false);
         }
       }
-    } catch (error) {
-      console.error("Clock in/out error:", error);
+    } catch (err) {
+      console.error("Clock in/out error:", err);
       setError("Failed to clock in/out");
     }
   };
@@ -110,15 +124,15 @@ const Header = () => {
       } else {
         await endBreak();
         setIsOnBreak(false);
-        await fetchCurrentShift(); // Fetch updated duration after break
+        await fetchCurrentShift(); // Fetch updated shift info after break
       }
-    } catch (error) {
-      console.error("Break handling error:", error);
+    } catch (err) {
+      console.error("Break handling error:", err);
       setError("Failed to handle break");
     }
   };
 
-  const formatTime = (seconds) => {
+  const formatTime = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
@@ -139,8 +153,8 @@ const Header = () => {
       }
     }
     const data = await logout();
-    if (data.success) {
-      setUser(null);
+    if (data?.success) {
+      setUser(null as any);
       navigate("/login");
     }
   };
@@ -167,51 +181,49 @@ const Header = () => {
 
         {user?.userType !== "admin" && (
           <div className="flex items-center gap-4 mr-4">
-            {error ? (
-              <div className="text-red-500">{error}</div>
-            ) : currentShift ? (
-              <>
-                <div className="flex items-center gap-2">
-                  <Timer className="h-5 w-5 text-gray-600" />
-                  <span className="font-mono text-lg">
-                    {formatTime(elapsedTime)}
-                  </span>
-                </div>
+            {error && <div className="text-red-500">{error}</div>}
+            {/* Always render the clock button regardless of whether there is an active shift.
+                The timer only shows if clocked in */}
+            {isClockedIn && (
+              <div className="flex items-center gap-2">
+                <Timer className="h-5 w-5 text-gray-600" />
+                <span className="font-mono text-lg">
+                  {formatTime(elapsedTime)}
+                </span>
+              </div>
+            )}
+            <button
+              onClick={handleClockInOut}
+              className={`px-4 py-2 rounded-md font-medium transition-colors ${
+                isClockedIn
+                  ? "bg-red-100 text-red-600 hover:bg-red-200"
+                  : "bg-green-100 text-green-600 hover:bg-green-200"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {isClockedIn ? (
+                  <Square className="h-4 w-4" />
+                ) : (
+                  <Play className="h-4 w-4" />
+                )}
+                {isClockedIn ? "Clock Out" : "Clock In"}
+              </div>
+            </button>
 
-                <button
-                  onClick={handleClockInOut}
-                  className={`px-4 py-2 rounded-md font-medium transition-colors ${
-                    isClockedIn
-                      ? "bg-red-100 text-red-600 hover:bg-red-200"
-                      : "bg-green-100 text-green-600 hover:bg-green-200"
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    {isClockedIn ? (
-                      <Square className="h-4 w-4" />
-                    ) : (
-                      <Play className="h-4 w-4" />
-                    )}
-                    {isClockedIn ? "Clock Out" : "Clock In"}
-                  </div>
-                </button>
-
-                <button
-                  onClick={handleBreak}
-                  disabled={!isClockedIn}
-                  className={`px-4 py-2 rounded-md font-medium transition-colors ${
-                    isOnBreak
-                      ? "bg-yellow-100 text-yellow-600 hover:bg-yellow-200"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                  } ${!isClockedIn && "opacity-50 cursor-not-allowed"}`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Coffee className="h-4 w-4" />
-                    {isOnBreak ? "End Break" : "Break"}
-                  </div>
-                </button>
-              </>
-            ) : null}
+            <button
+              onClick={handleBreak}
+              disabled={!isClockedIn}
+              className={`px-4 py-2 rounded-md font-medium transition-colors ${
+                isOnBreak
+                  ? "bg-yellow-100 text-yellow-600 hover:bg-yellow-200"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              } ${!isClockedIn && "opacity-50 cursor-not-allowed"}`}
+            >
+              <div className="flex items-center gap-2">
+                <Coffee className="h-4 w-4" />
+                {isOnBreak ? "End Break" : "Break"}
+              </div>
+            </button>
           </div>
         )}
 

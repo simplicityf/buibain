@@ -61,3 +61,86 @@
 //     return next(error);
 //   }
 // };
+
+// /**
+//  * Dummy live trades for testing.
+//  */
+// const getDummyLiveTrades = (): any[] => {
+//   return [
+//     {
+//       trade_hash: "dummyTradeHash1",
+//       platform: "paxful", // or "noones"
+//       amount: 1000,
+//       accountId: "dummyPaxfulAccountId", // Simulated external account identifier
+//       status: "PENDING",
+//     },
+//     {
+//       trade_hash: "dummyTradeHash2",
+//       platform: "noones",
+//       amount: 2000,
+//       accountId: "dummyNoonesAccountId", // Simulated external account identifier
+//       status: "PENDING",
+//     },
+//   ];
+// };
+
+// /**
+//  * Helper function: Aggregate live (unassigned) trades from both platforms.
+//  */
+// const aggregateLiveTrades = async (): Promise<any[]> => {
+//   const services = await initializePlatformServices();
+//   let liveTrades: any[] = [];
+
+//   // Fetch trades from Paxful.
+//   for (const service of services.paxful) {
+//     try {
+//       const paxfulTrades = await service.listActiveTrades();
+//       liveTrades = liveTrades.concat(
+//         paxfulTrades.map((trade: any) => ({
+//           ...trade,
+//           platform: "paxful",
+//           accountId: service.accountId,
+//         }))
+//       );
+//     } catch (error) {
+//       console.error(
+//         `Error fetching Paxful trades for account ${service.accountId}:`,
+//         error
+//       );
+//     }
+//   }
+
+//   // Fetch trades from Noones.
+//   for (const service of services.noones) {
+//     try {
+//       const noonesTrades = await service.listActiveTrades();
+//       liveTrades = liveTrades.concat(
+//         noonesTrades.map((trade: any) => ({
+//           ...trade,
+//           platform: "noones",
+//           accountId: service.accountId,
+//         }))
+//       );
+//     } catch (error) {
+//       console.error(
+//         `Error fetching Noones trades for account ${service.accountId}:`,
+//         error
+//       );
+//     }
+//   }
+
+//   // Return only trades with status "PENDING"
+//   return liveTrades.filter((trade) => trade.status === "PENDING");
+// };
+
+// /**
+//  * Get all available payers (users with role PAYER and clockedIn true).
+//  */
+// const getAvailablePayers = async (): Promise<User[]> => {
+//   const userRepository = dbConnect.getRepository(User);
+//   const payers = await userRepository.find({
+//     where: { userType: UserType.PAYER, clockedIn: true },
+//     order: { createdAt: "ASC" },
+//   });
+//   return payers;
+// };

@@ -4,15 +4,29 @@ import { UserRequest } from "../middlewares/authenticate";
 import { Shift, ShiftType, ShiftStatus, ShiftEndType } from "../models/shift";
 import { User, UserType } from "../models/user";
 import ErrorHandler from "../utils/errorHandler";
-import { ActivityLog, ActivityType } from "../models/activityLogs";
 import { io } from "../server";
+import { Between } from "typeorm";
 
+// Define the scheduled start times for each shift type
 const SHIFT_TIMES = {
   [ShiftType.MORNING]: { start: "08:00", end: "15:00" },
-  [ShiftType.AFTERNOON]: { start: "15:00", end: "15:00" },
-  [ShiftType.NIGHT]: { start: "19:00", end: "08:00" },
+  [ShiftType.AFTERNOON]: { start: "15:00", end: "21:00" },
+  [ShiftType.NIGHT]: { start: "21:00", end: "08:00" },
 };
 
+// Helper function to determine the shift type based on the current time.
+const getShiftTypeFromTime = (date: Date): ShiftType => {
+  const currentTime = date.getHours() * 100 + date.getMinutes();
+  if (currentTime >= 800 && currentTime < 1500) {
+    return ShiftType.MORNING;
+  } else if (currentTime >= 1500 && currentTime < 2100) {
+    return ShiftType.AFTERNOON;
+  } else {
+    return ShiftType.NIGHT;
+  }
+};
+
+// Clock In Endpoint using time-based auto-detection
 export const clockIn: RequestHandler = async (
   req: UserRequest,
   res: Response,
@@ -28,49 +42,46 @@ export const clockIn: RequestHandler = async (
     const user = await userRepo.findOne({ where: { id: userId } });
     if (!user) throw new ErrorHandler("User not found", 404);
 
-    const activeShift = await shiftRepo.findOne({
-      where: {
-        user: { id: userId },
-        isClockedIn: true,
-      },
-    });
-
-    if (activeShift) throw new ErrorHandler("Already clocked in", 400);
-
+    // Determine shift type dynamically
     const now = new Date();
-    const currentTime = now.getHours() * 100 + now.getMinutes();
-    let shiftType: ShiftType;
+    const shiftType = getShiftTypeFromTime(now);
 
-    if (currentTime >= 800 && currentTime < 1500) {
-      shiftType = ShiftType.MORNING;
-    } else if (currentTime >= 1500 && currentTime < 2100) {
-      shiftType = ShiftType.AFTERNOON;
-    } else {
-      shiftType = ShiftType.NIGHT;
-    }
-
-    // Find shift for current session
-    const currentShift = await shiftRepo.findOne({
+    // Check if an active shift already exists for this user and shift type
+    let currentShift = await shiftRepo.findOne({
       where: {
         user: { id: userId },
-        shiftType: ShiftType.AFTERNOON,
+        shiftType,
         status: ShiftStatus.ACTIVE,
       },
     });
 
     if (!currentShift) {
-      throw new ErrorHandler("No shift found for current session", 404);
+      // Create a new shift record if none exists
+      currentShift = new Shift();
+      currentShift.user = user;
+      currentShift.shiftType = shiftType;
+      currentShift.status = ShiftStatus.ACTIVE;
+      currentShift.totalWorkDuration = 0;
+      currentShift.breaks = [];
     }
 
-    const isLate = checkIfLate(currentTime, shiftType);
-
-    // Update the existing shift
+    // Update shift record with clock-in details
     currentShift.isClockedIn = true;
     currentShift.clockInTime = now;
-    currentShift.isLateClockIn = isLate;
-    currentShift.lateMinutes = isLate
-      ? calculateLateMinutes(now, shiftType)
-      : 0;
+
+    // Determine scheduled start time for the shift from SHIFT_TIMES
+    const [startHour, startMinute] = SHIFT_TIMES[shiftType].start.split(":").map(Number);
+    const scheduledStart = new Date(now);
+    scheduledStart.setHours(startHour, startMinute, 0, 0);
+
+    // Calculate if the user is late and by how many minutes
+    if (now > scheduledStart) {
+      currentShift.isLateClockIn = true;
+      currentShift.lateMinutes = Math.floor((now.getTime() - scheduledStart.getTime()) / 60000);
+    } else {
+      currentShift.isLateClockIn = false;
+      currentShift.lateMinutes = 0;
+    }
 
     await shiftRepo.save(currentShift);
     await userRepo.update(userId, { clockedIn: true });
@@ -91,17 +102,7 @@ export const clockIn: RequestHandler = async (
   }
 };
 
-function checkIfLate(currentTime: number, shiftType: ShiftType): boolean {
-  switch (shiftType) {
-    case ShiftType.MORNING:
-      return currentTime > 800;
-    case ShiftType.AFTERNOON:
-      return currentTime > 1500;
-    case ShiftType.NIGHT:
-      return currentTime > 2100 || currentTime < 800;
-  }
-}
-
+// Clock Out Endpoint (kept largely the same)
 export const clockOut = async (
   req: UserRequest,
   res: Response,
@@ -121,15 +122,13 @@ export const clockOut = async (
       where: { user: { id: userId }, status: ShiftStatus.ACTIVE },
     });
 
-    console.log(activeShift);
-
     if (!activeShift)
       return next(new ErrorHandler("No active shift found", 404));
 
     const now = new Date();
 
     try {
-      // Attempt to close shift gracefully
+      // Gracefully close the shift
       activeShift.clockOutTime = now;
       activeShift.isClockedIn = false;
       activeShift.totalWorkDuration += calculateWorkDuration(
@@ -158,8 +157,7 @@ export const clockOut = async (
         data: activeShift,
       });
     } catch (shiftError) {
-      console.error("🚨 Error updating shift:", shiftError);
-
+      console.error("Error updating shift:", shiftError);
       activeShift.status = ShiftStatus.FORCE_CLOSED;
       activeShift.clockOutTime = now;
 
@@ -171,30 +169,27 @@ export const clockOut = async (
       );
     }
   } catch (error) {
-    console.error("🚨 Unexpected error during clock-out:", error);
-
+    console.error("Unexpected error during clock-out:", error);
     try {
       let activeShift = await shiftRepo.findOne({
         where: { user: { id: userId }, status: ShiftStatus.ACTIVE },
       });
-
       if (activeShift) {
         activeShift.status = ShiftStatus.FORCE_CLOSED;
         activeShift.clockOutTime = new Date();
         await shiftRepo.save(activeShift);
       }
-
       await userRepo.update(userId, { clockedIn: false });
     } catch (cleanupError) {
-      console.error("🚨 Error during shift force closure:", cleanupError);
+      console.error("Error during shift force closure:", cleanupError);
     }
-
     return next(
       new ErrorHandler("Critical error occurred. Shift forcefully closed.", 500)
     );
   }
 };
 
+// Start Break Endpoint (unchanged)
 export const startBreak: RequestHandler = async (
   req: UserRequest,
   res: Response,
@@ -240,6 +235,7 @@ export const startBreak: RequestHandler = async (
   }
 };
 
+// End Break Endpoint (unchanged)
 export const endBreak: RequestHandler = async (
   req: UserRequest,
   res: Response,
@@ -288,6 +284,7 @@ export const endBreak: RequestHandler = async (
   }
 };
 
+// Get Shift Metrics Endpoint (unchanged)
 export const getShiftMetrics: RequestHandler = async (
   req: UserRequest,
   res: Response,
@@ -299,11 +296,18 @@ export const getShiftMetrics: RequestHandler = async (
 
     const { startDate, endDate } = req.query;
     const shiftRepo = dbConnect.getRepository(Shift);
+    
+    // Build the where condition
+    let whereCondition: any = { user: { id: userId } };
+    if (startDate && endDate) {
+      whereCondition = {
+        ...whereCondition,
+        createdAt: Between(new Date(startDate as string), new Date(endDate as string))
+      };
+    }
 
     const shifts = await shiftRepo.find({
-      where: {
-        user: { id: userId },
-      },
+      where: whereCondition,
       order: { createdAt: "DESC" },
     });
 
@@ -353,6 +357,8 @@ export const getShiftMetrics: RequestHandler = async (
   }
 };
 
+
+// Force End Shift Endpoint (unchanged)
 export const forceEndShift: RequestHandler = async (
   req: UserRequest,
   res: Response,
@@ -408,24 +414,63 @@ export const forceEndShift: RequestHandler = async (
   }
 };
 
-const calculateLateMinutes = (clockIn: Date, shiftType: ShiftType): number => {
-  const shiftStart = SHIFT_TIMES[shiftType].start;
-  const [hours, minutes] = shiftStart.split(":").map(Number);
-  const shiftStartDate = new Date(clockIn);
-  shiftStartDate.setHours(hours, minutes, 0, 0);
+export const getCurrentShift: RequestHandler = async (
+  req: UserRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) throw new ErrorHandler("Unauthorized", 401);
 
-  return Math.max(
-    0,
-    Math.floor((clockIn.getTime() - shiftStartDate.getTime()) / 60000)
-  );
+    const userRepo = dbConnect.getRepository(User);
+    const shiftRepo = dbConnect.getRepository(Shift);
+
+    const user = await userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new ErrorHandler("User not found", 404);
+
+    // Determine the current shift type dynamically
+    const now = new Date();
+    const shiftType = getShiftTypeFromTime(now);
+
+    // Find the active shift for the user matching the calculated shift type
+    const currentShift = await shiftRepo.findOne({
+      where: {
+        user: { id: userId },
+        shiftType,
+        status: ShiftStatus.ACTIVE,
+      },
+      relations: ["user"],
+    });
+
+    if (!currentShift) {
+      throw new ErrorHandler("No active shift found for current session", 404);
+    }
+
+    res.json({
+      success: true,
+      message: "Current shift retrieved successfully",
+      data: {
+        shift: currentShift,
+        currentSession: shiftType,
+        isActive: currentShift.status === ShiftStatus.ACTIVE,
+        clockedIn: currentShift.isClockedIn,
+        workDuration: currentShift.totalWorkDuration || 0,
+        breaks: currentShift.breaks || [],
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
+// Helper functions for calculations
 const calculateWorkDuration = (
   clockIn: Date,
   clockOut: Date,
   breaks: any
 ): number => {
-  const totalMs = clockOut?.getTime() - clockIn?.getTime();
+  const totalMs = clockOut.getTime() - clockIn.getTime();
   const breakTimeMs = breaks.reduce(
     (acc: any, b: any) => acc + (b.duration ? b.duration * 60000 : 0),
     0
@@ -444,79 +489,4 @@ const calculateOvertime = (
   };
 
   return Math.max(0, totalWorkDuration - standardDurations[shiftType]);
-};
-// Get Current Active for a user
-
-export const getCurrentShift: RequestHandler = async (
-  req: UserRequest,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const userId = req.user?.id;
-    console.log(req.user);
-    if (!userId) throw new ErrorHandler("Unauthorized", 401);
-
-    const userRepo = dbConnect.getRepository(User);
-    const shiftRepo = dbConnect.getRepository(Shift);
-
-    const user = await userRepo.findOne({ where: { id: userId } });
-    if (!user) throw new ErrorHandler("User not found", 404);
-
-    const now = new Date();
-    const currentTime = now.getHours() * 100 + now.getMinutes();
-    let shiftType: ShiftType;
-
-    // if (currentTime >= 800 && currentTime < 1500) {
-    //   shiftType = ShiftType.MORNING;
-    // } else if (currentTime >= 1500 && currentTime < 2100) {
-    //   shiftType = ShiftType.AFTERNOON;
-    // } else {
-    //   shiftType = ShiftType.NIGHT;
-    // }
-
-    const currentShift = await shiftRepo.findOne({
-      where: {
-        user: { id: userId },
-        shiftType: ShiftType.AFTERNOON,
-        status: ShiftStatus.ACTIVE,
-      },
-      relations: ["user"],
-    });
-
-    if (!currentShift) {
-      throw new ErrorHandler("No active shift found for current session", 404);
-    }
-
-    res.json({
-      success: true,
-      message: "Current shift retrieved successfully",
-      data: {
-        shift: currentShift,
-        currentSession: ShiftType.AFTERNOON,
-        isActive: currentShift.status === ShiftStatus.ACTIVE,
-        clockedIn: currentShift.isClockedIn,
-        workDuration: currentShift.totalWorkDuration || 0,
-        breaks: currentShift.breaks || [],
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const isWithinShiftHours = (
-  currentTime: number,
-  shiftType: ShiftType
-): boolean => {
-  switch (shiftType) {
-    case ShiftType.MORNING:
-      return currentTime >= 800 && currentTime < 1500;
-    case ShiftType.AFTERNOON:
-      return currentTime >= 1500 && currentTime < 2100;
-    case ShiftType.NIGHT:
-      return currentTime >= 2100 || currentTime < 800;
-    default:
-      return false;
-  }
 };

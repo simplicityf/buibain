@@ -410,10 +410,11 @@ export class NoonesService {
       const params = new URLSearchParams();
       params.append("offer_hash", offerHash);
       params.append("margin", margin.toString());
-
+  
+      // Updated endpoint to include '/noones/v1'
       const response = await this.makeAuthenticatedRequest<{
         success: boolean;
-      }>("/offer/update", params);
+      }>("/noones/v1/offer/update", params);
       console.log(response);
       return response;
     } catch (error: any) {
@@ -422,6 +423,7 @@ export class NoonesService {
       );
     }
   }
+  
   // Add to NoonesService class
   async turnOffAllOffers(): Promise<number> {
     try {

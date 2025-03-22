@@ -51,7 +51,7 @@ const Login: React.FC = () => {
     if (user !== null) {
       navigate("/");
     }
-  }, [user]);
+  }, [navigate, user]);
 
   return (
     <div

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
   Box,
-  Grid,
   Card,
   Typography,
   IconButton,
@@ -14,6 +13,7 @@ import {
   Tooltip,
   Switch,
   FormControlLabel,
+  CircularProgress, // <-- Added for loading spinner
 } from "@mui/material";
 import {
   TrendingUp,
@@ -25,16 +25,15 @@ import {
   Construction as ConstructionIcon,
   Timeline,
 } from "@mui/icons-material";
-import ForexAnalytics from "./ForexAnalytics";
 import { useUserContext } from "../../Components/ContextProvider";
 import { RefreshCwIcon } from "lucide-react";
 import { getDashboardStats } from "../../api/trade";
 
 const StatusCard: React.FC<{
   title: string;
-  value: any;
+  value: number | string;
   subtitle: string;
-  icon: any;
+  icon: React.ReactNode;
   color: string;
 }> = ({ title, value, subtitle, icon, color }) => {
   const theme = useTheme();
@@ -56,11 +55,7 @@ const StatusCard: React.FC<{
       }}
     >
       <Box sx={{ p: 3 }}>
-        <Stack
-          direction="row"
-          justifyContent="space-between"
-          alignItems="center"
-        >
+        <Stack direction="row" justifyContent="space-between" alignItems="center">
           <Box
             sx={{
               p: 1.5,
@@ -71,13 +66,7 @@ const StatusCard: React.FC<{
           >
             {icon}
           </Box>
-          <Typography
-            variant="h3"
-            sx={{
-              fontWeight: 700,
-              color: color,
-            }}
-          >
+          <Typography variant="h3" sx={{ fontWeight: 700, color: color }}>
             {value}
           </Typography>
         </Stack>
@@ -102,8 +91,8 @@ const StatusCard: React.FC<{
 
 const Dashboard = () => {
   const theme = useTheme();
-  const [maintenanceMode, setMaintenanceMode] = React.useState(false);
-  const [anchorEl, setAnchorEl] = React.useState(null);
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const { user } = useUserContext();
   const [stats, setStats] = useState({
     currentlyAssigned: 0,
@@ -115,33 +104,40 @@ const Dashboard = () => {
     averageResponseTime: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null); // <-- New error state
+
+  // Improved: Added error state and loading spinner in fetchStats
+  const fetchStats = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await getDashboardStats();
+      if (response?.data) {
+        setStats({
+          currentlyAssigned: response.data.currentlyAssigned,
+          notYetAssigned: response.data.notYetAssigned,
+          escalated: response.data.escalated,
+          paidButNotMarked: response.data.paidButNotMarked,
+          totalTradesNGN: response.data.totalTradesNGN,
+          totalTradesBTC: response.data.totalTradesBTC,
+          averageResponseTime: response.data.averageResponseTime,
+        });
+      } else {
+        setError("No dashboard data returned.");
+      }
+    } catch (err: unknown) {
+      console.error("Error fetching dashboard stats:", err);
+      setError("Failed to load dashboard stats. Please try again later.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const response = await getDashboardStats();
-        if (response.data) {
-          setStats({
-            currentlyAssigned: response.data.currentlyAssigned,
-            notYetAssigned: response.data.notYetAssigned,
-            escalated: response.data.escalated,
-            paidButNotMarked: response.data.paidButNotMarked,
-            totalTradesNGN: response.data.totalTradesNGN,
-            totalTradesBTC: response.data.totalTradesBTC,
-            averageResponseTime: response.data.averageResponseTime,
-          });
-        }
-      } catch (error) {
-        console.error("Error fetching dashboard stats:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchStats();
   }, []);
 
-  const handleMenuClick = (event: any) => {
+  const handleMenuClick = (event: React.MouseEvent<HTMLButtonElement>) => {
     setAnchorEl(event.currentTarget);
   };
 
@@ -150,6 +146,7 @@ const Dashboard = () => {
   };
 
   const handleClearCache = () => {
+    // This can be tied to a backend cache clear if needed.
     handleMenuClose();
   };
 
@@ -158,8 +155,34 @@ const Dashboard = () => {
     handleMenuClose();
   };
 
+  const handleRefreshStats = () => {
+    fetchStats();
+  };
+
   const fullName = user?.fullName?.toString() || "";
   const firstName = fullName.split(" ")[0];
+
+  // Improved: Render loading spinner or error message if needed
+  if (loading) {
+    return (
+      <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "80vh" }}>
+        <CircularProgress color="primary" />
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Typography variant="h6" color="error">
+          {error}
+        </Typography>
+        <Button variant="contained" onClick={handleRefreshStats} sx={{ mt: 2 }}>
+          Retry
+        </Button>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 3, maxWidth: "2xl", mx: "auto" }}>
@@ -191,9 +214,7 @@ const Dashboard = () => {
                 onClick={handleClearCache}
                 sx={{
                   bgcolor: "rgba(255, 255, 255, 0.1)",
-                  "&:hover": {
-                    bgcolor: "rgba(255, 255, 255, 0.2)",
-                  },
+                  "&:hover": { bgcolor: "rgba(255, 255, 255, 0.2)" },
                 }}
               >
                 Clear Cache
@@ -216,200 +237,182 @@ const Dashboard = () => {
             Hello {firstName}
             <WavingHandIcon sx={{ fontSize: 32 }} />
           </Typography>
+          {/* Refresh button for dashboard stats */}
+          <Tooltip title="Refresh Stats">
+            <IconButton onClick={handleRefreshStats} sx={{ color: "white" }}>
+              <RefreshCwIcon />
+            </IconButton>
+          </Tooltip>
         </Stack>
 
-        <Menu
-          anchorEl={anchorEl}
-          open={Boolean(anchorEl)}
-          onClose={handleMenuClose}
-        >
+        <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
           <MenuItem onClick={handleMaintenanceMode}>
             <FormControlLabel
               control={
-                <Switch
-                  checked={maintenanceMode}
-                  onChange={handleMaintenanceMode}
-                  color="primary"
-                />
+                <Switch checked={maintenanceMode} onChange={handleMaintenanceMode} color="primary" />
               }
               label="Maintenance Mode"
             />
           </MenuItem>
         </Menu>
 
-        {/* System Status Cards */}
-        <Grid container spacing={3} sx={{ mt: 2 }}>
-          <Grid item xs={12} md={6}>
-            <Box
-              sx={{
-                p: 2,
-                borderRadius: 2,
-                bgcolor: "rgba(0, 0, 0, 0.1)",
-                backdropFilter: "blur(10px)",
-              }}
-            >
-              <Stack
-                direction="row"
-                justifyContent="space-between"
-                alignItems="center"
-              >
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <SpeedIcon />
-                  <Typography variant="subtitle1">Uptime</Typography>
-                </Stack>
-                <Typography
-                  variant="h4"
-                  sx={{ color: "#4CAF50", fontWeight: 700 }}
-                >
-                  99.9%
-                </Typography>
+        {/* System Status Cards using Box with CSS Grid */}
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+            gap: 3,
+            mt: 2,
+          }}
+        >
+          <Box
+            sx={{
+              p: 2,
+              borderRadius: 2,
+              bgcolor: "rgba(0, 0, 0, 0.1)",
+              backdropFilter: "blur(10px)",
+            }}
+          >
+            <Stack direction="row" justifyContent="space-between" alignItems="center">
+              <Stack direction="row" spacing={1} alignItems="center">
+                <SpeedIcon />
+                <Typography variant="subtitle1">Uptime</Typography>
               </Stack>
-              <Typography
-                variant="caption"
-                sx={{ color: "rgba(255, 255, 255, 0.7)" }}
-              >
-                Last 30 Days
+              <Typography variant="h4" sx={{ color: "#4CAF50", fontWeight: 700 }}>
+                99.9%
               </Typography>
-            </Box>
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <Box
-              sx={{
-                p: 2,
-                borderRadius: 2,
-                bgcolor: "rgba(0, 0, 0, 0.1)",
-                backdropFilter: "blur(10px)",
-              }}
-            >
-              <Stack
-                direction="row"
-                justifyContent="space-between"
-                alignItems="center"
-              >
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Warning />
-                  <Typography variant="subtitle1">Errors</Typography>
-                </Stack>
-                <Typography
-                  variant="h4"
-                  sx={{ color: "#f44336", fontWeight: 700 }}
-                >
-                  5
-                </Typography>
+            </Stack>
+            <Typography variant="caption" sx={{ color: "rgba(255, 255, 255, 0.7)" }}>
+              Last 30 Days
+            </Typography>
+          </Box>
+          <Box
+            sx={{
+              p: 2,
+              borderRadius: 2,
+              bgcolor: "rgba(0, 0, 0, 0.1)",
+              backdropFilter: "blur(10px)",
+            }}
+          >
+            <Stack direction="row" justifyContent="space-between" alignItems="center">
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Warning />
+                <Typography variant="subtitle1">Errors</Typography>
               </Stack>
-              <Typography
-                variant="caption"
-                sx={{ color: "rgba(255, 255, 255, 0.7)" }}
-              >
-                Last 30 Days
+              <Typography variant="h4" sx={{ color: "#f44336", fontWeight: 700 }}>
+                5
               </Typography>
-            </Box>
-          </Grid>
-        </Grid>
+            </Stack>
+            <Typography variant="caption" sx={{ color: "rgba(255, 255, 255, 0.7)" }}>
+              Last 30 Days
+            </Typography>
+          </Box>
+        </Box>
       </Box>
-      {/* Status Cards */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatusCard
-            title="Currently Assigned"
-            value={stats.currentlyAssigned.toString()}
-            subtitle="Active assignments"
-            icon={<Assignment />}
-            color={theme.palette.primary.main}
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatusCard
-            title="Not Yet Assigned"
-            value={stats.notYetAssigned.toString()}
-            subtitle="Pending assignments"
-            icon={<Timeline />}
-            color={theme.palette.warning.main}
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatusCard
-            title="Escalated"
-            value={stats.escalated.toString()}
-            subtitle="Requires attention"
-            icon={<TrendingUp />}
-            color={theme.palette.error.main}
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatusCard
-            title="Paid but not marked"
-            value={stats.paidButNotMarked.toString()}
-            subtitle="Pending verification"
-            icon={<RefreshCwIcon />}
-            color={theme.palette.success.main}
-          />
-        </Grid>
-      </Grid>
 
-      {/* Trades Section */}
+      {/* Status Cards using Box with CSS Grid */}
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "repeat(4, 1fr)" },
+          gap: 3,
+          mb: 4,
+        }}
+      >
+        <StatusCard
+          title="Currently Assigned"
+          value={stats.currentlyAssigned.toString()}
+          subtitle="Active assignments"
+          icon={<Assignment />}
+          color={theme.palette.primary.main}
+        />
+        <StatusCard
+          title="Not Yet Assigned"
+          value={stats.notYetAssigned.toString()}
+          subtitle="Pending assignments"
+          icon={<Timeline />}
+          color={theme.palette.warning.main}
+        />
+        <StatusCard
+          title="Escalated"
+          value={stats.escalated.toString()}
+          subtitle="Requires attention"
+          icon={<TrendingUp />}
+          color={theme.palette.error.main}
+        />
+        <StatusCard
+          title="Paid but not marked"
+          value={stats.paidButNotMarked.toString()}
+          subtitle="Pending verification"
+          icon={<RefreshCwIcon />}
+          color={theme.palette.success.main}
+        />
+      </Box>
+
+      {/* Trades Section using Box with CSS Grid */}
       <Card sx={{ mb: 4 }}>
         <Box sx={{ p: 3 }}>
           <Typography variant="h6" fontWeight={600}>
             TRADES PAID REALTIME
           </Typography>
-          <Grid container spacing={3} sx={{ mt: 1 }}>
-            <Grid item xs={12} md={4}>
-              <Box
-                sx={{
-                  p: 2,
-                  borderRadius: 1,
-                  bgcolor: alpha(theme.palette.primary.main, 0.05),
-                  border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
-                }}
-              >
-                <Typography variant="h4" fontWeight={700} color="primary">
-                  {stats.averageResponseTime.toFixed(1)}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  AVERAGE RESPONSE TIME OF PAYER (SECS)
-                </Typography>
-              </Box>
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <Box
-                sx={{
-                  p: 2,
-                  borderRadius: 1,
-                  bgcolor: alpha(theme.palette.warning.main, 0.05),
-                  border: `1px solid ${alpha(theme.palette.warning.main, 0.1)}`,
-                }}
-              >
-                <Typography variant="h4" fontWeight={700} color="warning.main">
-                  {stats.totalTradesNGN.toLocaleString()}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  TOTAL (NGN)
-                </Typography>
-              </Box>
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <Box
-                sx={{
-                  p: 2,
-                  borderRadius: 1,
-                  bgcolor: alpha(theme.palette.success.main, 0.05),
-                  border: `1px solid ${alpha(theme.palette.success.main, 0.1)}`,
-                }}
-              >
-                <Typography variant="h4" fontWeight={700} color="success.main">
-                  {stats.totalTradesBTC.toFixed(5)}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  TOTAL (BTC)
-                </Typography>
-              </Box>
-            </Grid>
-          </Grid>
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", md: "repeat(3, 1fr)" },
+              gap: 3,
+              mt: 1,
+            }}
+          >
+            <Box
+              sx={{
+                p: 2,
+                borderRadius: 1,
+                bgcolor: alpha(theme.palette.primary.main, 0.05),
+                border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
+              }}
+            >
+              <Typography variant="h4" fontWeight={700} color="primary">
+                {stats.averageResponseTime.toFixed(1)}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                AVERAGE RESPONSE TIME OF PAYER (SECS)
+              </Typography>
+            </Box>
+            <Box
+              sx={{
+                p: 2,
+                borderRadius: 1,
+                bgcolor: alpha(theme.palette.warning.main, 0.05),
+                border: `1px solid ${alpha(theme.palette.warning.main, 0.1)}`,
+              }}
+            >
+              <Typography variant="h4" fontWeight={700} color="warning.main">
+                {stats.totalTradesNGN.toLocaleString()}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                TOTAL (NGN)
+              </Typography>
+            </Box>
+            <Box
+              sx={{
+                p: 2,
+                borderRadius: 1,
+                bgcolor: alpha(theme.palette.success.main, 0.05),
+                border: `1px solid ${alpha(theme.palette.success.main, 0.1)}`,
+              }}
+            >
+              <Typography variant="h4" fontWeight={700} color="success.main">
+                {stats.totalTradesBTC.toFixed(5)}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                TOTAL (BTC)
+              </Typography>
+            </Box>
+          </Box>
         </Box>
       </Card>
 
-      {/* Additional content */}
+      {/* Additional content can go here */}
     </Box>
   );
 };

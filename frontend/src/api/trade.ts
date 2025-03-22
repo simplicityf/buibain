@@ -3,9 +3,71 @@ import { ResInterface } from "../lib/interface";
 import { api, handleApiError } from "./user";
 import { successStyles } from "../lib/constants";
 
+// Currency and Rates Endpoints
 export const getRates = async () => {
   try {
     const res: ResInterface = await api.get("/trade/currency/rates");
+    return res;
+  } catch (error) {
+    handleApiError(error);
+  }
+};
+
+export const getCurrentRates = async () => {
+  try {
+    const res: ResInterface = await api.get("/trade/currency/rates");
+    return res;
+  } catch (error) {
+    handleApiError(error);
+  }
+};
+
+export const setRaterRates = async (
+  sellingPrice: number,
+  noonesRate: number,
+  paxfulRate: number,
+  usdtNgnRate: unknown,
+  markup2: unknown
+) => {
+  try {
+    const res: ResInterface = await api.post("/trade/set-rates", {
+      sellingPrice,
+      noonesRate,
+      paxfulRate,
+      usdtNgnRate,
+      markup2,
+    });
+
+    console.log("API Response from setRaterRates:", res);
+    return res;
+  } catch (error) {
+    console.error("Error in setRaterRates:", error);
+    handleApiError(error);
+  }
+};
+
+export const getRaterRates = async () => {
+  try {
+    const res: ResInterface = await api.get("/trade/get-rates");
+    return res;
+  } catch (error) {
+    handleApiError(error);
+  }
+};
+
+// Trade Endpoints
+export const getLiveTrades = async () => {
+  try {
+    const res: ResInterface = await api.get("/trade/live-trades");
+    return res;
+  } catch (error) {
+    handleApiError(error);
+  }
+};
+
+export const assignLiveTrades = async () => {
+  try {
+    const res: ResInterface = await api.post("/trade/assign-live-trade");
     return res;
   } catch (error) {
     handleApiError(error);
@@ -27,29 +89,26 @@ export const getTradeDetails = async (
   accountId: string
 ) => {
   try {
-    const res: ResInterface = await api.post("/trade/payer/trade/info", {
-      platform,
-      tradeHash,
-      accountId,
-    });
+    const res: ResInterface = await api.get(
+      `/trade/payer/trade/info/${platform}/${tradeHash}/${accountId}`
+    );
     return res;
   } catch (error) {
     handleApiError(error);
   }
 };
 
+/**
+ * Send a trade chat message.
+ * Updated to match backend: route is POST /trade/message/:tradeId with { content } in the body.
+ */
 export const sendTradeMessage = async (
-  tradeHash: string,
-  content: string,
-  platform: string,
-  accountId: string
+  tradeId: string,
+  content: string
 ) => {
   try {
-    const res: ResInterface = await api.post("/trade/message", {
-      tradeHash,
+    const res: ResInterface = await api.post(`/trade/message/${tradeId}`, {
       content,
-      platform,
-      accountId,
     });
     return res;
   } catch (error) {
@@ -57,57 +116,17 @@ export const sendTradeMessage = async (
   }
 };
 
-export const getCurrentRates = async () => {
-  try {
-    const res: ResInterface = await api.get("/trade/currency/rates");
-
-    return res;
-  } catch (error) {
-    handleApiError(error);
-  }
-};
-
-export const setRaterRates = async (
-  sellingPrice: number,
-  noonesRate: number,
-  paxfulRate: number,
-  usdtNgnRate: any,
-  markup2: any
-) => {
-  try {
-    const res: ResInterface = await api.post("/trade/set-rates", {
-      sellingPrice,
-      noonesRate,
-      paxfulRate,
-      usdtNgnRate,
-      markup2,
-    });
-
-    return res;
-  } catch (error) {
-    handleApiError(error);
-  }
-};
-
-export const getRaterRates = async () => {
-  try {
-    const res: ResInterface = await api.get("/trade/get-rates");
-    return res;
-  } catch (error) {
-    handleApiError(error);
-  }
-};
-
+/**
+ * Mark trade as paid.
+ * Updated to match backend: route is POST /trade/mark-paid/:tradeId with { message } in the body.
+ */
 export const markTradeAsPaid = async (
-  platform: string,
-  tradeHash: string,
-  accountId: string
+  tradeId: string,
+  message: string
 ) => {
   try {
-    const res: ResInterface = await api.post("/trade/mark-paid", {
-      platform,
-      tradeHash,
-      accountId,
+    const res: ResInterface = await api.post(`/trade/mark-paid/${tradeId}`, {
+      message,
     });
     return res;
   } catch (error) {
@@ -115,6 +134,7 @@ export const markTradeAsPaid = async (
   }
 };
 
+// Dashboard and Completed Trades Endpoints
 export const getDashboardStats = async () => {
   try {
     const res: ResInterface = await api.get("/trade/dashboard");
@@ -135,15 +155,30 @@ export const getCompletedTrades = async (page?: number, limit?: number) => {
   }
 };
 
-export const updateOffersMargin = async (
-  paxfulMargin: number,
-  noonesMargin: number
-) => {
+// Wallet and Offers Endpoints
+export const getWalletBalances = async () => {
   try {
-    const res: ResInterface = await api.put("/trade/offers/update", {
-      paxfulMargin,
-      noonesMargin,
-    });
+    const res: ResInterface = await api.get("/trade/wallet-balances");
+    return res;
+  } catch (error) {
+    handleApiError(error);
+  }
+};
+
+export const getOffersMargin = async () => {
+  try {
+    const res: ResInterface = await api.get("/trade/offers");
+    return res;
+  } catch (error) {
+    handleApiError(error);
+  }
+};
+
+
+export const updateOffersMargin = async () => {
+  try {
+    const res = await api.post("/trade/offers/update");
+    console.log("Update Margin API Response from setRaterRates:", res);
     return res;
   } catch (error) {
     handleApiError(error);
@@ -175,6 +210,28 @@ export const reAssignTrade = async (tradeId: string, userId: string) => {
       userId,
     });
     toast.success(res.message, successStyles);
+    return res;
+  } catch (error) {
+    handleApiError(error);
+  }
+};
+
+export const getAllTrades = async (page?: number, limit?: number) => {
+  try {
+    const res: ResInterface = await api.get("/trade/all-trades", {
+      params: { page, limit },
+    });
+    return res;
+  } catch (error) {
+    handleApiError(error);
+  }
+};
+
+export const getUnfinishedTrades = async (page?: number, limit?: number) => {
+  try {
+    const res: ResInterface = await api.get("/trade/unfinished-trades", {
+      params: { page, limit },
+    });
     return res;
   } catch (error) {
     handleApiError(error);

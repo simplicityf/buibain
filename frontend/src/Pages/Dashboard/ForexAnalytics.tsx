@@ -1,8 +1,7 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   Box,
   Card,
-  Grid,
   Typography,
   IconButton,
   Stack,
@@ -14,16 +13,9 @@ import {
   Chip,
 } from "@mui/material";
 import {
-  ShowChart,
-  TrendingUp,
-  CurrencyExchange,
-  Timeline,
-  AccessTime,
   ArrowUpward,
   ArrowDownward,
-  PriceChange,
   Analytics,
-  AccountBalance,
   Refresh,
 } from "@mui/icons-material";
 import {
@@ -38,7 +30,6 @@ import {
   Line,
   ComposedChart,
   Bar,
-  Scatter,
   Legend,
 } from "recharts";
 
@@ -111,49 +102,54 @@ const ForexAnalytics = () => {
           </Stack>
         </Stack>
 
-        {/* Currency Pairs Overview */}
-        <Grid container spacing={3} sx={{ mb: 4 }}>
+        {/* Currency Pairs Overview - Replaced Grid with Box */}
+        <Box
+          sx={{
+            display: "grid",
+            // xs: 1 column, sm: 2 columns, md: 4 columns
+            gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr", md: "repeat(4, 1fr)" },
+            gap: 3,
+            mb: 4,
+          }}
+        >
           {currencyPairData.map((pair) => (
-            <Grid item xs={12} sm={6} md={3} key={pair.pair}>
-              <Card
-                sx={{
-                  p: 2,
-                  backgroundColor: "background.paper",
-                  transition: "transform 0.2s",
-                  "&:hover": {
-                    transform: "translateY(-4px)",
-                  },
-                }}
-              >
-                <Stack spacing={1}>
-                  <Stack
-                    direction="row"
-                    justifyContent="space-between"
-                    alignItems="center"
-                  >
-                    <Typography variant="h6" fontWeight={600}>
-                      {pair.pair}
-                    </Typography>
-                    <Chip
-                      size="small"
-                      icon={
-                        pair.change > 0 ? <ArrowUpward /> : <ArrowDownward />
-                      }
-                      label={`${Math.abs(pair.change)}%`}
-                      color={pair.change > 0 ? "success" : "error"}
-                    />
-                  </Stack>
-                  <Typography variant="h4" fontWeight={700}>
-                    {pair.price}
+            <Card
+              key={pair.pair}
+              sx={{
+                p: 2,
+                backgroundColor: "background.paper",
+                transition: "transform 0.2s",
+                "&:hover": {
+                  transform: "translateY(-4px)",
+                },
+              }}
+            >
+              <Stack spacing={1}>
+                <Stack
+                  direction="row"
+                  justifyContent="space-between"
+                  alignItems="center"
+                >
+                  <Typography variant="h6" fontWeight={600}>
+                    {pair.pair}
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Volume: {pair.volume}
-                  </Typography>
+                  <Chip
+                    size="small"
+                    icon={pair.change > 0 ? <ArrowUpward /> : <ArrowDownward />}
+                    label={`${Math.abs(pair.change)}%`}
+                    color={pair.change > 0 ? "success" : "error"}
+                  />
                 </Stack>
-              </Card>
-            </Grid>
+                <Typography variant="h4" fontWeight={700}>
+                  {pair.price}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Volume: {pair.volume}
+                </Typography>
+              </Stack>
+            </Card>
           ))}
-        </Grid>
+        </Box>
 
         {/* Main Chart */}
         <Card sx={{ p: 3, mb: 4 }}>
@@ -194,59 +190,61 @@ const ForexAnalytics = () => {
           </Box>
         </Card>
 
-        {/* Additional Charts */}
-        <Grid container spacing={3}>
+        {/* Additional Charts - Replaced Grid with Box */}
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)" },
+            gap: 3,
+          }}
+        >
           {/* Volatility Chart */}
-          <Grid item xs={12} md={6}>
-            <Card sx={{ p: 3 }}>
-              <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
-                Market Volatility
-              </Typography>
-              <Box sx={{ height: 300 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={forexData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="time" />
-                    <YAxis />
-                    <Tooltip />
-                    <Area
-                      type="monotone"
-                      dataKey="volatility"
-                      stroke={theme.palette.error.main}
-                      fill={alpha(theme.palette.error.main, 0.1)}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </Box>
-            </Card>
-          </Grid>
+          <Card sx={{ p: 3 }}>
+            <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
+              Market Volatility
+            </Typography>
+            <Box sx={{ height: 300 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={forexData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="time" />
+                  <YAxis />
+                  <Tooltip />
+                  <Area
+                    type="monotone"
+                    dataKey="volatility"
+                    stroke={theme.palette.error.main}
+                    fill={alpha(theme.palette.error.main, 0.1)}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </Box>
+          </Card>
 
           {/* Price Movement Chart */}
-          <Grid item xs={12} md={6}>
-            <Card sx={{ p: 3 }}>
-              <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
-                Price Movements
-              </Typography>
-              <Box sx={{ height: 300 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={forexData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="time" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line
-                      type="monotone"
-                      dataKey="JPY"
-                      stroke={theme.palette.info.main}
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </Box>
-            </Card>
-          </Grid>
-        </Grid>
+          <Card sx={{ p: 3 }}>
+            <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
+              Price Movements
+            </Typography>
+            <Box sx={{ height: 300 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={forexData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="time" />
+                  <YAxis />
+                  <Tooltip />
+                  <Line
+                    type="monotone"
+                    dataKey="JPY"
+                    stroke={theme.palette.info.main}
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </Box>
+          </Card>
+        </Box>
       </Card>
     </Box>
   );

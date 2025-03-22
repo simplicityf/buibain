@@ -17,8 +17,6 @@ interface EscalationModalProps {
   onClose: () => void;
   escalateData: {
     tradeId: string;
-    platform: string;
-    amount: number;
     assignedPayerId: string;
     escalatedById: string;
     tradeHash: string;
@@ -27,13 +25,9 @@ interface EscalationModalProps {
 
 interface EscalationFormValues {
   complaint: string;
-  additionalNotes: string;
   tradeId: string;
-  tradeHash: string;
-  platform: string;
-  amount: number;
-  assignedPayerId: string;
   escalatedById: string;
+  assignedPayerId: string;
 }
 
 const complaintOptions = [
@@ -54,37 +48,27 @@ const EscalateTrade: React.FC<EscalationModalProps> = ({
   escalateData,
 }) => {
   const initialValues: EscalationFormValues = {
-    complaint: "Payment Issue",
-    additionalNotes: "",
-    tradeHash: escalateData.tradeHash,
+    complaint: "",
     tradeId: escalateData.tradeId,
-    amount: escalateData.amount,
     escalatedById: escalateData.escalatedById,
     assignedPayerId: escalateData.assignedPayerId,
-    platform: escalateData.platform,
   };
 
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      maxWidth="sm"
-      fullWidth
-      className="rounded-lg"
-    >
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth className="rounded-lg">
       <DialogTitle className="bg-gray-50 border-b">
         Escalate Trade #{escalateData.tradeHash}
       </DialogTitle>
-
       <Formik
         initialValues={initialValues}
         validationSchema={validationSchema}
         onSubmit={async (values, { setSubmitting }) => {
           setSubmitting(false);
           const data = await createEscalatedTrade({
-            ...values,
-            tradeHash: escalateData.tradeHash,
-            tradeId: escalateData.tradeId,
+            tradeId: values.tradeId,
+            complaint: values.complaint,
+            escalatedById: values.escalatedById,
+            assignedPayerId: values.assignedPayerId,
           });
           if (data?.success) {
             onClose();
@@ -106,35 +90,15 @@ const EscalateTrade: React.FC<EscalationModalProps> = ({
                       helperText={touched.complaint && errors.complaint}
                     >
                       {complaintOptions.map((option) => (
-                        <MenuItem key={option.label} value={option.label}>
+                        <MenuItem key={option.value} value={option.value}>
                           {option.label}
                         </MenuItem>
                       ))}
                     </TextField>
                   )}
                 </Field>
-
-                <Field name="additionalNotes">
-                  {({ field }: any) => (
-                    <TextField
-                      {...field}
-                      fullWidth
-                      multiline
-                      rows={4}
-                      label="Additional Notes (Optional)"
-                      error={
-                        touched.additionalNotes &&
-                        Boolean(errors.additionalNotes)
-                      }
-                      helperText={
-                        touched.additionalNotes && errors.additionalNotes
-                      }
-                    />
-                  )}
-                </Field>
               </div>
             </DialogContent>
-
             <DialogActions className="bg-gray-50 border-t p-4">
               <Button onClick={onClose} className="text-gray-600">
                 Cancel

@@ -306,7 +306,7 @@ export class PaxfulService {
     try {
       const response = await this.makeRequest("/paxful/v1/offer/update", {
         offer_hash: offerId,
-        margin: margin.toString(),
+        margin: margin,
       });
       console.log(response);
       return response;

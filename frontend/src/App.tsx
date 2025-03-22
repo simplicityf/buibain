@@ -26,7 +26,7 @@ import ResetPassword from "./Pages/ResetPassword";
 import ActivityLogs from "./Pages/ActivityLogs/ActivityLogs";
 import MessageTemplateForm from "./Pages/AutoTemplate/AutoTemplate";
 import AllTemplates from "./Pages/AutoTemplate/AllTemplates";
-import CreateAccounts from "./Pages/Accounts/CreateAccounts.tsx";
+import CreateAccounts from "./Pages/Accounts/CreateAccounts";
 import AllAccounts from "./Pages/Accounts/AllAccounts";
 
 function App() {

@@ -18,24 +18,22 @@ export async function escalateTrade(
     return res.status(400).json({ errors: errors.array() });
   }
 
-  const {
-    tradeId,
-    escalatedById,
-    assignedPayerId,
-    complaint,
-    tradeHash,
-    platform,
-    amount,
-  } = req.body;
-  console.log(req.body);
+  // Now only extract complaint from the request body
+  const { complaint } = req.body;
+  const { tradeId, escalatedById, assignedPayerId } = req.params;
+
+  console.log("Request Params:", req.params);
+  console.log("Request Body:", req.body);
+
   try {
     const tradeRepo = dbConnect.getRepository(Trade);
-
     const trade = await tradeRepo.findOne({ where: { id: tradeId } });
 
-    if (!complaint || !tradeId || !tradeHash) {
-      return res.status(400).json({ message: "In complete details" });
+    // Validate only the complaint and tradeId (tradeHash, platform, amount removed)
+    if (!complaint || !tradeId) {
+      return res.status(400).json({ message: "Incomplete details." });
     }
+
     if (!trade) {
       return res.status(404).json({ message: "Trade not found." });
     }
@@ -52,7 +50,9 @@ export async function escalateTrade(
     }
 
     const userRepo = dbConnect.getRepository(User);
-    const ccUser = await userRepo.findOne({ where: { userType: UserType.CC } });
+    const ccUser = await userRepo.findOne({
+      where: { userType: UserType.CC },
+    });
     const payer = await userRepo.findOne({ where: { id: assignedPayerId } });
     const escalatedBy = await userRepo.findOne({
       where: { id: escalatedById },
@@ -64,13 +64,13 @@ export async function escalateTrade(
         .json({ message: "Invalid user details provided." });
     }
 
+    // Create new escalation record using only the complaint field
     const newEscalation = escalatedTradeRepo.create({
       trade,
       assignedCcAgent: ccUser,
       assignedPayer: payer,
       escalatedBy,
-      amount,
-      platform,
+      complaint,
     });
 
     await escalatedTradeRepo.save(newEscalation);
